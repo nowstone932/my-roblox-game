@@ -37,8 +37,9 @@ end
 function Monetization.applyRoundPerks(player: Player)
 	if ownsStarterKit[player] then
 		Inventory.add(player, "FlareGun", 1)
+		Inventory.add(player, "Axe", 1)
 		Inventory.add(player, "Ammo", M.StarterKitAmmo)
-		notify:FireClient(player, "스타터 키트: 조명탄 총 + 탄약 " .. M.StarterKitAmmo .. "발")
+		notify:FireClient(player, "스타터 키트: 조명탄 총 + 손도끼 + 조명탄 " .. M.StarterKitAmmo .. "발")
 	end
 end
 

@@ -7,11 +7,12 @@
 
 ## 게임 흐름
 
-1. 대기 시간 후 라운드 시작, 모두 숲 남쪽에서 출발
-2. 숲에 흩어진 재료(고철, 나무, 약초, 화약, 퓨즈)를 줍기
-3. 재료로 **조명탄 총 / 탄약 / 섬광탄 / 붕대** 제작
-4. 괴물은 보이거나 가까우면 추격 → 섬광탄으로 기절, 총으로 쓰러뜨리기 (잠시 후 부활)
-5. 퓨즈 3개를 퓨즈 박스에 넣으면 북쪽 탈출문이 열림 → 통과하면 탈출 성공
+1998년, 사라진 벌목꾼들을 찾으러 흑송 벌목장에 온 수색대. 숲에는 사슴 두개골 얼굴의 "숲지기"가 있다.
+
+1. 숲에서 재료와 탈출 부품을 모으고, 쪽지로 단서를 얻는다
+2. 제작대(C)에서 손도끼, 조명탄 총, 섬광탄, 곰덫, 붕대, 봉인 말뚝을 만든다 → 핫바에 실제 도구로 들어옴
+3. 숲지기를 피하거나(나무 뒤, 옷장), 기절시키거나(섬광탄, 덫), 싸운다(도끼, 총)
+4. 4가지 방법 중 하나로 탈출: **정문**(퓨즈) / **트럭**(배터리+연료+열쇠) / **무전 구조**(안테나) / **봉인**(룬 3개로 말뚝 → 쓰러진 괴물에게)
 
 ## 폴더 구조
 
@@ -19,27 +20,34 @@
 default.project.json        Rojo 설정 (어떤 폴더가 Studio 어디로 가는지)
 src/
   shared/                   → ReplicatedStorage.Shared (서버/클라 공용)
-    Config.luau             밸런스 숫자, 수익화 ID ← 가장 자주 고칠 파일
+    Config.luau             밸런스 숫자, 소리 ID, 수익화 ID ← 가장 자주 고칠 파일
+    Story.luau              스토리, 쪽지 내용, 엔딩, 탈출 부품 위치 후보
+    Items.luau              아이템 이름/색/설명
     Recipes.luau            제작법
     Remotes.luau            서버 ↔ 클라 통신
   server/                   → ServerScriptService.Server
     Main.server.luau        서버 시작점
     Services/
-      MapBuilder.luau       어두운 숲 맵 자동 생성 + 조명
-      MaterialSpawner.luau  재료 뿌리기 / 줍기
-      MonsterAI.luau        괴물 AI (배회, 추격, 기절, 부활)
-      Combat.luau           제작, 총 발사, 아이템 사용 (서버 판정)
-      GameLoop.luau         라운드 진행, 퓨즈/탈출문, 탈출 판정
+      Build.luau            소품 만들기 (나무, 오두막, 트럭, 옷장 …)
+      MapBuilder.luau       흑송 벌목장 맵 배치 + 조명
+      Pickups.luau          재료 / 탈출 부품 / 쪽지
+      Tools.luau            제작한 도구를 핫바에 실제 Tool로 넣기
+      Combat.luau           제작, 도구 사용 (서버 판정)
+      MonsterAI.luau        숲지기 모델 + AI (배회, 소리 조사, 추격, 기절, 쓰러짐, 봉인)
+      Hiding.luau           옷장 숨기
+      Objectives.luau       정문 / 트럭 / 무전 / 봉인 탈출 장치
+      GameLoop.luau         라운드 진행, 탈출 처리, 엔딩
       Monetization.luau     게임패스 / 개발자 상품
       Inventory.luau        인벤토리 (플레이어 Attribute)
   client/                   → StarterPlayerScripts.Client
-    Main.client.luau        입력, 손전등, 효과
-    Hud.luau                화면 UI
+    Main.client.luau        입력, 손전등, 달리기, 효과
+    Hud.luau                목표 패널, 가방, 제작대, 쪽지, 인트로/엔딩
+    MonsterAnimator.luau    괴물 걷기/팔 뻗기/고개 꺾기 연출
 ```
 
 ## 다음에 해볼 만한 것
 
 - 괴물 소리, 발소리, 배경음 (Creator Store에서 사운드 ID 가져오기)
-- 실제 괴물 모델/애니메이션으로 교체
+- Blender 등으로 만든 괴물 메시로 교체
 - DataStore로 탈출 기록·구매 기록 저장
 - Studio에서 맵 직접 꾸미기 (오두막, 길, 안개 낀 호수 등)

@@ -1,34 +1,32 @@
 -- 라운드 흐름
 -- 대기(Intermission) -> 플레이(Playing) -> 종료(Ended) -> 다시 대기 ...
 --
--- 플레이 중 목표: 숲에서 퓨즈 3개를 찾아 탈출문 옆 퓨즈 박스에 넣고, 열린 문으로 탈출!
--- 죽으면 그 라운드는 관전(부활 상품으로 되살아날 수 있음).
+-- 플레이 중: 4가지 탈출 방법 중 아무거나로 탈출하면 성공 (Objectives.luau 참고)
+-- 죽으면 그 라운드는 관전 (부활 상품으로 되살아날 수 있음). 들고 있던 탈출 부품은 떨어짐.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Story = require(ReplicatedStorage.Shared.Story)
 local Inventory = require(script.Parent.Inventory)
-local MaterialSpawner = require(script.Parent.MaterialSpawner)
+local Pickups = require(script.Parent.Pickups)
 local MonsterAI = require(script.Parent.MonsterAI)
 local Monetization = require(script.Parent.Monetization)
+local Objectives = require(script.Parent.Objectives)
+local Hiding = require(script.Parent.Hiding)
 
 local notify = Remotes.get("Notify")
+local storyEvent = Remotes.get("StoryEvent")
 
 local GameLoop = {}
 
 local map = nil
 local roundState = "Intermission"
-local fusesPlaced = 0
-local gateOpen = false
 
--- 클라이언트 HUD가 읽을 수 있게 ReplicatedStorage의 Attribute로 상태를 공개
 local function publish()
 	ReplicatedStorage:SetAttribute("RoundState", roundState)
-	ReplicatedStorage:SetAttribute("FusesPlaced", fusesPlaced)
-	ReplicatedStorage:SetAttribute("FusesRequired", Config.Escape.FusesRequired)
-	ReplicatedStorage:SetAttribute("GateOpen", gateOpen)
 end
 
 local function setTimeLeft(seconds: number)
@@ -53,20 +51,24 @@ local function addEscape(player: Player)
 	end
 end
 
-local function setGate(open: boolean)
-	gateOpen = open
-	local door = map.GateDoor
-	door.CanCollide = not open
-	door.Transparency = if open then 0.85 else 0
-	door.Color = if open then Color3.fromRGB(60, 200, 90) else Color3.fromRGB(120, 20, 20)
-	local light = map.FuseBox:FindFirstChildOfClass("PointLight")
-	if light then
-		light.Color = if open then Color3.fromRGB(60, 255, 90) else Color3.fromRGB(255, 60, 60)
+-- 탈출 처리 (Objectives가 부름)
+local function onEscape(player: Player, route: string)
+	if roundState ~= "Playing" or player:GetAttribute("Escaped") == true then
+		return
 	end
-	publish()
+	Hiding.release(player)
+	player:SetAttribute("Escaped", true)
+	player:SetAttribute("EscapeRoute", route)
+	addEscape(player)
+	notify:FireAllClients(("%s 탈출 성공! (%s)"):format(player.DisplayName, Story.Endings[route].title))
+	storyEvent:FireClient(player, "Ending", route)
+	local char = player.Character
+	if char then
+		char:PivotTo(map.SafeRoom.CFrame + Vector3.new(0, 4, 0))
+	end
 end
 
-local function playersInRound(): { Player }
+local function activePlayers(): { Player }
 	local list = {}
 	for _, player in Players:GetPlayers() do
 		if player:GetAttribute("InRound") == true and player:GetAttribute("Escaped") ~= true then
@@ -80,78 +82,43 @@ local function spawnIntoRound(player: Player)
 	Inventory.reset(player)
 	player:SetAttribute("InRound", true)
 	player:SetAttribute("Escaped", false)
+	player:SetAttribute("EscapeRoute", nil)
 	player:LoadCharacter()
 	Monetization.applyRoundPerks(player)
 end
 
 local function startRound()
-	fusesPlaced = 0
 	roundState = "Playing"
-	setGate(false)
-	MaterialSpawner.reset()
+	publish()
+	Objectives.reset()
+	Pickups.reset()
 	MonsterAI.start()
+	Objectives.setActive(true)
 	for _, player in Players:GetPlayers() do
-		spawnIntoRound(player)
+		task.spawn(spawnIntoRound, player)
 	end
-	notify:FireAllClients(("퓨즈 %d개를 찾아 탈출문을 열어라!"):format(Config.Escape.FusesRequired))
+	storyEvent:FireAllClients("Intro")
 end
 
-local function endRound()
+local function endRound(timedOut: boolean)
 	roundState = "Ended"
 	publish()
+	Objectives.setActive(false)
+	Hiding.releaseAll()
 	MonsterAI.stop()
-	MaterialSpawner.clear()
+	Pickups.clear()
 
-	local escaped = {}
+	local escaped = 0
 	for _, player in Players:GetPlayers() do
 		if player:GetAttribute("Escaped") == true then
-			table.insert(escaped, player.DisplayName)
+			escaped += 1
+		elseif player:GetAttribute("InRound") ~= nil then
+			-- 탈출 못 한 사람에게 엔딩
+			storyEvent:FireClient(player, "Ending", if timedOut and player:GetAttribute("InRound") == true then "Timeout" else "Dead")
 		end
 		player:SetAttribute("InRound", false)
 	end
-	if #escaped > 0 then
-		notify:FireAllClients("탈출 성공: " .. table.concat(escaped, ", "))
-	else
-		notify:FireAllClients("아무도 탈출하지 못했다...")
-	end
-end
-
-local function onFuseBox(player: Player)
-	if roundState ~= "Playing" or gateOpen then
-		return
-	end
-	local have = Inventory.get(player, "Fuse")
-	if have < 1 then
-		notify:FireClient(player, "퓨즈가 없어요. 숲에서 노란 빛을 찾아보세요")
-		return
-	end
-	local needed = Config.Escape.FusesRequired - fusesPlaced
-	local used = math.min(have, needed)
-	Inventory.add(player, "Fuse", -used)
-	fusesPlaced += used
-	publish()
-	if fusesPlaced >= Config.Escape.FusesRequired then
-		setGate(true)
-		notify:FireAllClients("탈출문이 열렸다! 북쪽 문으로 도망쳐!")
-	else
-		notify:FireAllClients(("퓨즈 %d/%d"):format(fusesPlaced, Config.Escape.FusesRequired))
-	end
-end
-
-local function onExitTouched(hit: BasePart)
-	if roundState ~= "Playing" or not gateOpen then
-		return
-	end
-	local char = hit:FindFirstAncestorOfClass("Model")
-	local player = char and Players:GetPlayerFromCharacter(char)
-	if not player or player:GetAttribute("InRound") ~= true or player:GetAttribute("Escaped") == true then
-		return
-	end
-	player:SetAttribute("Escaped", true)
-	addEscape(player)
-	notify:FireAllClients(player.DisplayName .. " 탈출 성공!")
-	-- 안전한 방으로 이동
-	char:PivotTo(map.SafeRoom.CFrame + Vector3.new(0, 4, 0))
+	notify:FireAllClients(("라운드 종료 — %d명 탈출"):format(escaped))
 end
 
 local function onCharacterAdded(player: Player, character: Model)
@@ -159,7 +126,11 @@ local function onCharacterAdded(player: Player, character: Model)
 	hum.Died:Connect(function()
 		if roundState == "Playing" and player:GetAttribute("InRound") == true and player:GetAttribute("Escaped") ~= true then
 			player:SetAttribute("InRound", false)
-			notify:FireAllClients(player.DisplayName .. "이(가) 괴물에게 당했다...")
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp and hrp:IsA("BasePart") then
+				Pickups.dropQuestItems(player, hrp.Position)
+			end
+			notify:FireAllClients(player.DisplayName .. "이(가) 숲지기에게 당했다…")
 		end
 	end)
 end
@@ -173,6 +144,7 @@ local function onPlayerAdded(player: Player)
 	end)
 	if roundState == "Playing" then
 		spawnIntoRound(player) -- 중간에 들어와도 바로 참가
+		storyEvent:FireClient(player, "Intro")
 	else
 		player:SetAttribute("InRound", false)
 		player:LoadCharacter()
@@ -203,21 +175,13 @@ function GameLoop.init(mapInfo)
 	map = mapInfo
 	Players.CharacterAutoLoads = false -- 죽으면 라운드 끝날 때까지 관전
 
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "퓨즈 넣기"
-	prompt.ObjectText = "퓨즈 박스"
-	prompt.HoldDuration = 0.5
-	prompt.MaxActivationDistance = 10
-	prompt.Parent = map.FuseBox
-	prompt.Triggered:Connect(onFuseBox)
-
-	map.ExitZone.Touched:Connect(onExitTouched)
+	Objectives.init(map, onEscape)
+	MonsterAI.onSealed = Objectives.onSealed
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
 	end
-
 	publish()
 end
 
@@ -226,7 +190,6 @@ function GameLoop.run()
 		-- 대기
 		roundState = "Intermission"
 		publish()
-		-- 죽었거나 탈출한 사람 모두 시작 지점으로
 		for _, player in Players:GetPlayers() do
 			task.spawn(player.LoadCharacter, player)
 		end
@@ -241,8 +204,9 @@ function GameLoop.run()
 
 		-- 플레이
 		startRound()
+		task.wait(2) -- 캐릭터가 생길 시간
 		t = Config.Round.RoundTime
-		while t > 0 and #playersInRound() > 0 do
+		while t > 0 and #activePlayers() > 0 do
 			setTimeLeft(t)
 			task.wait(1)
 			t -= 1
@@ -250,8 +214,8 @@ function GameLoop.run()
 		setTimeLeft(0)
 
 		-- 종료
-		endRound()
-		task.wait(6)
+		endRound(t <= 0)
+		task.wait(10)
 	end
 end
 

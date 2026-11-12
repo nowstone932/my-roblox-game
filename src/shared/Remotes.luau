@@ -6,10 +6,11 @@ local RunService = game:GetService("RunService")
 
 local NAMES = {
 	"Craft", -- 클라 -> 서버: 제작 요청 (recipeId)
-	"Fire", -- 클라 -> 서버: 총 발사 (origin, direction)
-	"UseItem", -- 클라 -> 서버: 아이템 사용 ("Flashbang" | "Medkit")
+	"UseTool", -- 클라 -> 서버: 손에 든 도구 사용 (itemId, origin, direction)
 	"Notify", -- 서버 -> 클라: 화면에 메시지 표시 (text)
 	"Effect", -- 서버 -> 클라: 시각 효과 (kind, ...)
+	"ShowNote", -- 서버 -> 클라: 쪽지 읽기 (noteId)
+	"StoryEvent", -- 서버 -> 클라: 인트로/엔딩 화면 ("Intro" | "Ending", endingId)
 }
 
 local folder: Instance

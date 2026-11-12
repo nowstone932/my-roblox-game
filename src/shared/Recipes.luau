@@ -1,4 +1,4 @@
--- 제작법 목록. 순서대로 숫자키 1, 2, 3, 4 에 연결됩니다.
+-- 제작법 목록 (제작 창에 이 순서대로 나옵니다)
 
 export type Recipe = {
 	id: string,
@@ -12,17 +12,26 @@ export type Recipe = {
 
 local list: { Recipe } = {
 	{
+		id = "Axe",
+		name = "손도끼",
+		desc = "근접 무기. 조용하다",
+		cost = { Wood = 2, Scrap = 1 },
+		item = "Axe",
+		amount = 1,
+		unique = true,
+	},
+	{
 		id = "FlareGun",
 		name = "조명탄 총",
-		desc = "괴물에게 피해를 줍니다 (왼쪽 클릭)",
-		cost = { Scrap = 3, Wood = 2 },
+		desc = "원거리 무기. 총소리가 괴물을 부른다",
+		cost = { Scrap = 3, Wood = 1, Gunpowder = 1 },
 		item = "FlareGun",
 		amount = 1,
 		unique = true,
 	},
 	{
 		id = "Ammo",
-		name = "탄약 x3",
+		name = "조명탄 x3",
 		desc = "조명탄 총 탄약",
 		cost = { Scrap = 1, Gunpowder = 1 },
 		item = "Ammo",
@@ -31,18 +40,35 @@ local list: { Recipe } = {
 	{
 		id = "Flashbang",
 		name = "섬광탄",
-		desc = "가까운 괴물을 잠시 기절시킵니다 (G)",
-		cost = { Scrap = 2, Gunpowder = 1 },
+		desc = "던져서 괴물을 5초 기절",
+		cost = { Scrap = 1, Gunpowder = 2 },
 		item = "Flashbang",
+		amount = 1,
+	},
+	{
+		id = "Trap",
+		name = "곰덫",
+		desc = "밟은 괴물을 6초 묶어둔다",
+		cost = { Scrap = 3 },
+		item = "Trap",
 		amount = 1,
 	},
 	{
 		id = "Medkit",
 		name = "붕대",
-		desc = "체력을 회복합니다 (H)",
-		cost = { Herb = 2, Wood = 1 },
+		desc = "체력 50 회복",
+		cost = { Herb = 1, Cloth = 1 },
 		item = "Medkit",
 		amount = 1,
+	},
+	{
+		id = "SealStake",
+		name = "봉인 말뚝",
+		desc = "쓰러진 괴물에게 박으면 영원히 봉인",
+		cost = { Rune = 3, Wood = 2 },
+		item = "SealStake",
+		amount = 1,
+		unique = true,
 	},
 }
 

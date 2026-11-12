@@ -3,16 +3,20 @@
 local Services = script.Parent.Services
 
 local MapBuilder = require(Services.MapBuilder)
-local MaterialSpawner = require(Services.MaterialSpawner)
+local Tools = require(Services.Tools)
+local Pickups = require(Services.Pickups)
 local MonsterAI = require(Services.MonsterAI)
+local Hiding = require(Services.Hiding)
 local Combat = require(Services.Combat)
 local Monetization = require(Services.Monetization)
 local GameLoop = require(Services.GameLoop)
 
 local map = MapBuilder.build()
 
-MaterialSpawner.init(map)
+Tools.init()
+Pickups.init(map)
 MonsterAI.init(map)
+Hiding.init(map)
 Combat.init()
 Monetization.init({
 	onRevive = GameLoop.revive,

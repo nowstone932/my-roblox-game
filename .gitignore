@@ -1,0 +1,7 @@
+# Studio에서 저장한 place 파일은 저장소에 올리지 않습니다 (코드는 src/ 에만 둡니다)
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+sourcemap.json
+.DS_Store

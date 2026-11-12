@@ -1,0 +1,4 @@
+# VS Code의 Rojo 확장을 쓰면 이 파일은 없어도 됩니다.
+# 터미널에서 직접 rojo를 쓰고 싶을 때 `rokit install` 로 같은 버전을 설치합니다.
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"

@@ -9,6 +9,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Audio = require(script.Parent.Audio)
 local Hud = require(script.Parent.Hud)
@@ -74,9 +75,9 @@ flashlightPart.CanTouch = false
 flashlightPart.Parent = Workspace
 
 local spot = Instance.new("SpotLight")
-spot.Range = 60
-spot.Angle = 45
-spot.Brightness = 3
+spot.Range = Config.Flashlight.Range
+spot.Angle = Config.Flashlight.Angle
+spot.Brightness = Config.Flashlight.Brightness
 spot.Shadows = true
 spot.Color = Color3.fromRGB(255, 240, 210)
 spot.Parent = flashlightPart

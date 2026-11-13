@@ -112,6 +112,13 @@ Config.Hiding = {
 	BlockedRange = 12, -- 괴물이 이 거리 안에 있으면 숨을 수 없음
 }
 
+-- 손전등 밝기: 숫자만 바꾸면 돼요. (예전 값: 밝기 3, 거리 60, 각도 45)
+Config.Flashlight = {
+	Brightness = 4.5, -- 빛의 세기 (예전 3의 1.5배)
+	Range = 75, -- 빛이 닿는 거리 (스터드)
+	Angle = 50, -- 빛이 퍼지는 각도 (도). 너무 넓히면 공포감이 줄어요
+}
+
 -- 소리와 배경음악(BGM) ID는 src/shared/SoundList.luau 에서 바꿔요. (설명: docs/소리_넣기.md)
 
 -- 수익화: Creator Hub에서 게임패스/개발자 상품을 만든 뒤 숫자 ID를 넣으세요. 0이면 꺼짐.

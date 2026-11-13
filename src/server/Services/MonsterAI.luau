@@ -20,6 +20,7 @@ local Workspace = game:GetService("Workspace")
 local Assets = require(ReplicatedStorage.Shared.Assets)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Sfx = require(script.Parent.Sfx)
 
 local notify = Remotes.get("Notify")
 local effect = Remotes.get("Effect")
@@ -398,6 +399,7 @@ local function checkTraps()
 					trap:Destroy()
 				end)
 				MonsterAI.stun(Config.Tools.Trap.HoldTime)
+				Sfx.all("TrapSnap", trap.Position)
 				notify:FireAllClients("괴물이 곰덫에 걸렸다!")
 				return
 			end

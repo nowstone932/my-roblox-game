@@ -6,12 +6,11 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
-local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Audio = require(script.Parent.Audio)
 local Hud = require(script.Parent.Hud)
 local MonsterAnimator = require(script.Parent.MonsterAnimator)
 
@@ -30,42 +29,25 @@ Hud.init({
 	end,
 })
 MonsterAnimator.start()
+Audio.init()
 
 player.AttributeChanged:Connect(Hud.refresh)
 ReplicatedStorage.AttributeChanged:Connect(Hud.refresh)
 Remotes.get("Notify").OnClientEvent:Connect(Hud.notify)
-Remotes.get("ShowNote").OnClientEvent:Connect(Hud.showNote)
+Remotes.get("ShowNote").OnClientEvent:Connect(function(noteId: string)
+	Audio.play("NoteOpen")
+	Hud.showNote(noteId)
+end)
 Remotes.get("StoryEvent").OnClientEvent:Connect(function(kind: string, endingId: string?)
 	if kind == "Intro" then
+		Audio.play("RoundStart")
 		Hud.showIntro()
 	elseif kind == "Ending" and endingId then
+		Audio.duckMusic(8)
+		Audio.play(if endingId == "Dead" or endingId == "Timeout" then "Defeat" else "Victory")
 		Hud.showEnding(endingId)
 	end
 end)
-
--- 소리 (Config.Sounds 에 ID를 넣으면 켜짐) -----------------------------
-local function makeSound(id: number, volume: number, looped: boolean): Sound?
-	if id == 0 then
-		return nil
-	end
-	local s = Instance.new("Sound")
-	s.SoundId = "rbxassetid://" .. id
-	s.Volume = volume
-	s.Looped = looped
-	s.Parent = SoundService
-	return s
-end
-local ambience = makeSound(Config.Sounds.Ambience, 0.4, true)
-if ambience then
-	ambience:Play()
-end
-local heartbeat = makeSound(Config.Sounds.Heartbeat, 0, true)
-if heartbeat then
-	heartbeat:Play()
-end
-local screamSound = makeSound(Config.Sounds.MonsterScream, 0.8, false)
-local gunSound = makeSound(Config.Sounds.Gunshot, 0.7, false)
-local flashSound = makeSound(Config.Sounds.Flashbang, 0.9, false)
 
 -- 손전등 ------------------------------------------------------------------
 local flashlightPart = Instance.new("Part")
@@ -191,8 +173,7 @@ RunService.Heartbeat:Connect(function()
 	spot.Enabled = flashlightOn and not flicker
 end)
 
--- 괴물 발소리: 걸음마다 화면이 살짝 울림
-local footstepSound = makeSound(Config.Sounds.Footstep, 1, false)
+-- 괴물 발소리: 걸음마다 화면이 살짝 울림 (소리는 괴물 위치에서 3D로)
 local stepTimer = 0
 RunService.Heartbeat:Connect(function(dt)
 	local mRoot = monsterRoot()
@@ -211,31 +192,80 @@ RunService.Heartbeat:Connect(function(dt)
 		if d < 60 then
 			local strength = (1 - d / 60)
 			camera.CFrame = camera.CFrame * CFrame.Angles((math.random() - 0.5) * 0.02 * strength, 0, (math.random() - 0.5) * 0.015 * strength)
-			if footstepSound then
-				footstepSound.Volume = strength
-				footstepSound:Play()
-			end
+			Audio.play("MonsterFootstep", mRoot.Position, if speed > 15 then 1.2 else 0.8)
 		end
 	end
 end)
 
--- 괴물이 가까우면 화면이 붉어지고 심장 소리 ---------------------------------
-RunService.Heartbeat:Connect(function()
+-- 괴물이 가까우면 화면이 붉어지고, 배경음악이 긴장/추격 음악으로 바뀜 ----------
+RunService.Heartbeat:Connect(function(dt)
 	local monster = Workspace:FindFirstChild("Monster")
 	local root = monster and monster:FindFirstChild("HumanoidRootPart")
 	local char = player.Character
 	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local danger = 0
+	local chasing = false
 	if root and myRoot and root:IsA("BasePart") and myRoot:IsA("BasePart") then
 		local state = monster:GetAttribute("State")
 		if state ~= "Downed" and state ~= "Sealed" then
-			danger = math.clamp(1 - (root.Position - myRoot.Position).Magnitude / 70, 0, 1)
+			local d = (root.Position - myRoot.Position).Magnitude
+			danger = math.clamp(1 - d / 70, 0, 1)
+			chasing = state == "Chase" and d < 110
 		end
 	end
 	Hud.setDanger(danger)
-	if heartbeat then
-		heartbeat.Volume = danger * 1.2
-		heartbeat.PlaybackSpeed = 1 + danger * 0.6
+
+	local alive = hum ~= nil and hum.Health > 0
+	local lowHealth = 0
+	if hum and alive then
+		lowHealth = math.clamp((0.45 - hum.Health / hum.MaxHealth) / 0.45, 0, 1) -- 체력 45% 아래부터 심장 소리
+	end
+	if player:GetAttribute("Downed") == true then
+		lowHealth = 1
+	end
+	local playing = ReplicatedStorage:GetAttribute("RoundState") == "Playing"
+		and player:GetAttribute("InRound") == true
+		and player:GetAttribute("Escaped") ~= true
+	Audio.update(dt, {
+		playing = playing,
+		danger = danger,
+		chasing = chasing,
+		lowHealth = lowHealth,
+		alive = alive,
+	})
+end)
+
+-- 괴물 숨소리(몸에 붙어 따라다님) + 가끔 으르렁 -------------------------------
+local breathRoot: BasePart? = nil
+local breathSound: Sound? = nil
+local growlTimer = 8
+local BREATH_BY_STATE = { Chase = 1, Wander = 0.6, Investigate = 0.7, Search = 0.8, Stalk = 0.35, Stunned = 0.3 }
+RunService.Heartbeat:Connect(function(dt)
+	local monster = Workspace:FindFirstChild("Monster")
+	local root = monster and monster:FindFirstChild("HumanoidRootPart")
+	if not (monster and root and root:IsA("BasePart")) then
+		return
+	end
+	if root ~= breathRoot then
+		breathRoot = root
+		breathSound = Audio.loop("MonsterBreath", root)
+	end
+	local state = monster:GetAttribute("State") or "Wander"
+	Audio.fade(breathSound, BREATH_BY_STATE[state] or 0, dt, 2)
+	growlTimer -= dt
+	if growlTimer <= 0 then
+		growlTimer = math.random(7, 15)
+		if state == "Wander" or state == "Investigate" or state == "Search" or state == "Stalk" then
+			Audio.play("MonsterGrowl", root, if state == "Stalk" then 0.5 else 1)
+		end
+	end
+end)
+
+-- 내가 쓰러졌을 때
+player:GetAttributeChangedSignal("Downed"):Connect(function()
+	if player:GetAttribute("Downed") == true then
+		Audio.play("Downed")
 	end
 end)
 
@@ -373,8 +403,6 @@ local function myPosition(): Vector3?
 	return nil
 end
 
-local whisperSound = makeSound(Config.Sounds.Whisper, 0.8, false)
-
 -- 공격당하는 순간 카메라가 괴물 얼굴로 확 돌아감
 local function jumpscare(facePos: Vector3)
 	local start = os.clock()
@@ -487,9 +515,7 @@ Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: an
 		end)
 		tempLight(hitPos, Color3.fromRGB(255, 120, 40), 24, 4, 1.2) -- 조명탄이라 한동안 밝힘
 		tempLight(origin, Color3.fromRGB(255, 160, 80), 14, 3, 0.08)
-		if gunSound then
-			gunSound:Play()
-		end
+		Audio.play("FlareGun", origin)
 	elseif kind == "Flash" then
 		local position: Vector3, radius: number = a, b
 		tempLight(position, Color3.new(1, 1, 1), radius * 1.5, 12, 0.35)
@@ -497,49 +523,56 @@ Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: an
 		if me and (me - position).Magnitude < radius then
 			Hud.flash(Color3.new(1, 1, 1), 0.15, 1.2)
 		end
-		if flashSound then
-			flashSound:Play()
-		end
+		Audio.play("Flashbang", position)
 	elseif kind == "Hurt" then
 		Hud.flash(Color3.fromRGB(200, 0, 0), 0.25, 0.8)
 		shake(0.08, 0.5)
+		Audio.play("PlayerHurt")
 		if typeof(a) == "Vector3" then
 			jumpscare(a)
 		end
 	elseif kind == "Heal" then
 		Hud.flash(Color3.fromRGB(80, 255, 120), 0.75, 0.6)
+		Audio.play("Heal")
 	elseif kind == "HitMarker" then
 		Hud.hitMarker()
 	elseif kind == "MonsterHit" then
 		tempLight(a, Color3.fromRGB(255, 60, 40), 10, 2, 0.15)
+		Audio.play("MonsterHurt", a)
 	elseif kind == "Scream" then
+		Audio.play("MonsterScream", a :: Vector3) -- 멀리서도 들리지만 작게
 		local me = myPosition()
 		if me and (me - (a :: Vector3)).Magnitude < 100 then
 			shake(0.04, 0.8)
 			Hud.flash(Color3.fromRGB(90, 0, 0), 0.6, 0.8)
-			if screamSound then
-				screamSound:Play()
-			end
 		end
 	elseif kind == "Vanish" then
 		smokeBurst(a)
+		Audio.play("MonsterVanish", a)
 	elseif kind == "Whisper" then
 		Hud.whisper(a)
 		Hud.flash(Color3.new(0, 0, 0), 0.5, 2)
-		if whisperSound then
-			whisperSound:Play()
-		end
+		Audio.play("Whisper")
 	elseif kind == "Apparition" then
 		apparition()
+		Audio.play("Stinger")
 	elseif kind == "Snap" then
 		Hud.notify("(등 뒤에서 나뭇가지 부러지는 소리…)")
 		shake(0.03, 0.3)
+		Audio.play("TwigSnap", camera.CFrame.Position - camera.CFrame.LookVector * 10)
 	elseif kind == "Blackout" then
 		blackoutUntil = os.clock() + (b or a or 5)
 		Hud.notify("…불빛이 모두 꺼졌다")
+		Audio.play("Blackout")
 	elseif kind == "Sealed" then
 		tempLight(a, Color3.fromRGB(160, 70, 255), 80, 8, 2.5)
 		Hud.flash(Color3.fromRGB(160, 70, 255), 0.4, 2)
 		shake(0.05, 1.5)
+		Audio.play("MonsterSealed", a)
+	elseif kind == "Sfx" then
+		-- 서버가 보낸 효과음 (a = 이름, b = 위치 또는 nil)
+		if typeof(a) == "string" then
+			Audio.play(a, if typeof(b) == "Vector3" then b else nil)
+		end
 	end
 end)

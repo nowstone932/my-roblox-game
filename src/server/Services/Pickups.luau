@@ -14,6 +14,7 @@ local ItemModels = require(ReplicatedStorage.Shared.ItemModels)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Story = require(ReplicatedStorage.Shared.Story)
 local Inventory = require(script.Parent.Inventory)
+local Sfx = require(script.Parent.Sfx)
 
 local notify = Remotes.get("Notify")
 local showNote = Remotes.get("ShowNote")
@@ -63,6 +64,7 @@ end
 
 local function onPicked(player: Player, itemId: string)
 	local def = Items.defs[itemId]
+	Sfx.to(player, if def.kind == "Quest" then "QuestPickup" else "Pickup")
 	if def.kind == "Quest" then
 		notify:FireClient(player, ("%s 획득! — %s"):format(def.name, def.desc))
 	else
@@ -162,6 +164,7 @@ local function spawnDogTags()
 				if tags and tags:IsA("IntValue") then
 					tags.Value += 1
 				end
+				Sfx.to(player, "QuestPickup")
 				showNote:FireClient(player, "Logger" .. i)
 				notify:FireClient(player, ("인식표 발견: %s (%d/%d)"):format(logger.name, i, #Story.Loggers))
 			end, true)

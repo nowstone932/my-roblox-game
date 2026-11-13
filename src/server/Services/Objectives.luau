@@ -14,6 +14,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Inventory = require(script.Parent.Inventory)
 local MonsterAI = require(script.Parent.MonsterAI)
+local Sfx = require(script.Parent.Sfx)
 
 local notify = Remotes.get("Notify")
 local E = Config.Escape
@@ -96,6 +97,8 @@ local function openGate()
 	if lamp then
 		lamp.Color = Color3.fromRGB(60, 255, 90)
 	end
+	Sfx.all("Generator", map.Generator.Position)
+	Sfx.all("GateOpen", map.GateDoor.Position)
 	TweenService:Create(map.GateDoor, TweenInfo.new(4, Enum.EasingStyle.Quad), { CFrame = gateClosedCf + Vector3.new(0, 17, 0) }):Play()
 	map.ExitZone.Transparency = 0.85
 	MonsterAI.noise(map.Generator.Position, Config.Noise.Generator)
@@ -115,6 +118,7 @@ local function onGenerator(player: Player)
 	Inventory.add(player, "Fuse", -used)
 	set("FusesPlaced", get("FusesPlaced") + used)
 	refreshFuseSlots()
+	Sfx.all("Install", map.Generator.Position)
 	if get("FusesPlaced") >= E.FusesRequired then
 		progress()
 		openGate()
@@ -169,6 +173,7 @@ local function driveAway(myGeneration: number)
 		task.wait(0.05)
 	end
 	map.Truck:PivotTo(start + Vector3.new(0, -100, 0)) -- 화면 밖으로 치움
+	Sfx.detach(map.Truck)
 end
 
 local function onTruck(player: Player)
@@ -189,6 +194,7 @@ local function onTruck(player: Player)
 			notify:FireClient(player, "트럭에 필요한 것: 배터리, 연료통, 열쇠")
 			return
 		end
+		Sfx.all("Install", map.Truck:GetPivot().Position)
 		progress("트럭 부품 설치!")
 		if truckReady() then
 			set("TruckState", "Ready")
@@ -200,6 +206,7 @@ local function onTruck(player: Player)
 		set("TruckState", "Starting")
 		truckPrompt.Enabled = false
 		setHeadlights(true)
+		Sfx.attach("TruckEngine", map.Truck)
 		MonsterAI.noise(map.Truck:GetPivot().Position, Config.Noise.TruckStart)
 		progress(("엔진이 굉음을 낸다! %d초 뒤 출발 — 트럭 근처를 지켜라!"):format(E.TruckWarmup))
 		local myGeneration = generation
@@ -274,6 +281,7 @@ local function runRescue(myGeneration: number)
 	end
 	set("RadioState", "Arrived")
 	helicopter = buildHelicopter()
+	Sfx.attach("Helicopter", helicopter)
 	notify:FireAllClients(("구조 헬기 도착! 서쪽 헬기장으로! (%d초 대기)"):format(E.RescueWindow))
 	MonsterAI.noise(map.Helipad.Position, Config.Noise.RadioCall)
 	local center = map.Helipad.Position
@@ -318,6 +326,7 @@ local function onRadio(player: Player)
 		local used = math.min(have, E.AntennaRequired - get("AntennaPlaced"))
 		Inventory.add(player, "Antenna", -used)
 		set("AntennaPlaced", get("AntennaPlaced") + used)
+		Sfx.all("Install", map.Radio.Position)
 		if get("AntennaPlaced") >= E.AntennaRequired then
 			set("RadioState", "Ready")
 			radioPrompt.ActionText = "구조 요청"
@@ -329,6 +338,7 @@ local function onRadio(player: Player)
 	elseif state == "Ready" then
 		set("RadioState", "Calling")
 		radioPrompt.Enabled = false
+		Sfx.all("RadioCall", map.Radio.Position)
 		MonsterAI.noise(map.Radio.Position, Config.Noise.RadioCall)
 		progress(("\"여기는 수색대! 흑송 벌목장 헬기장으로 구조 바람!\" — %d초 뒤 헬기 도착"):format(E.RescueWait))
 		task.spawn(runRescue, generation)
@@ -402,6 +412,7 @@ function Objectives.reset()
 	refreshFuseSlots()
 
 	map.Truck:PivotTo(truckHome)
+	Sfx.detach(map.Truck)
 	setHeadlights(false)
 	truckPrompt.Enabled = true
 	truckPrompt.ActionText = "부품 설치"

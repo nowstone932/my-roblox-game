@@ -33,12 +33,25 @@ Audio.init()
 
 player.AttributeChanged:Connect(Hud.refresh)
 ReplicatedStorage.AttributeChanged:Connect(Hud.refresh)
-Remotes.get("Notify").OnClientEvent:Connect(Hud.notify)
+-- 대기실에 있을 때는 숲에서 벌어지는 일(다른 팀 메시지, 효과)을 무시
+local function inLobby(): boolean
+	return player:GetAttribute("InLobby") == true
+end
+
+Remotes.get("LobbyNotify").OnClientEvent:Connect(Hud.notify)
+Remotes.get("Notify").OnClientEvent:Connect(function(text: string)
+	if not inLobby() then
+		Hud.notify(text)
+	end
+end)
 Remotes.get("ShowNote").OnClientEvent:Connect(function(noteId: string)
 	Audio.play("NoteOpen")
 	Hud.showNote(noteId)
 end)
 Remotes.get("StoryEvent").OnClientEvent:Connect(function(kind: string, endingId: string?)
+	if inLobby() then
+		return
+	end
 	if kind == "Intro" then
 		Audio.play("RoundStart")
 		Hud.showIntro()
@@ -497,6 +510,9 @@ local function apparition()
 end
 
 Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: any)
+	if inLobby() then
+		return
+	end
 	if kind == "Shot" then
 		local origin: Vector3, hitPos: Vector3 = a, b
 		local length = (hitPos - origin).Magnitude

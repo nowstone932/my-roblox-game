@@ -4,9 +4,20 @@
 local Config = {}
 
 Config.Round = {
-	IntermissionTime = 20, -- 라운드 시작 전 대기 시간(초)
+	IntermissionTime = 20, -- (게임 서버) 대기실에서 넘어온 사람들을 기다리는 최대 시간(초)
 	RoundTime = 900, -- 한 라운드 제한 시간(초) = 15분
-	MinPlayers = 1,
+}
+
+-- 대기실(로비): 방 여러 개, 방에 들어가면 카운트다운 후 그 방 사람들끼리 출발
+Config.Lobby = {
+	RoomCount = 4, -- 방 개수
+	MaxPlayers = 5, -- 방 하나에 들어갈 수 있는 최대 인원
+	Countdown = 30, -- 첫 사람이 들어가면 출발까지 몇 초
+	-- true: 출발하면 그 방 사람들만 "새 서버(전용 숲)"로 순간이동 (게임을 게시한 뒤에만 동작)
+	-- false: 같은 서버 안의 숲으로 출발 (한 번에 한 방만 플레이, 나머지 방은 기다림)
+	-- Studio 테스트에서는 순간이동이 안 되기 때문에 항상 false처럼 동작해요.
+	UseTeleport = true,
+	ReturnDelay = 10, -- 라운드가 끝나고 대기실로 돌아가기까지(초)
 }
 
 Config.Map = {

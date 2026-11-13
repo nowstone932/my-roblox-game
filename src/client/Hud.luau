@@ -21,6 +21,7 @@ local gui: ScreenGui
 local topLabel: TextLabel
 local objectivesLabel: TextLabel
 local bagFrame: Frame
+local objFrame: Frame
 local hidingLabel: TextLabel
 local crosshair: TextLabel
 local notifyList: Frame
@@ -116,7 +117,7 @@ function Hud.init(callbacks: Callbacks)
 	dangerFrame = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(110, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
 	flashFrame = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 20, Parent = gui })
 
-	topLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 44), Size = UDim2.fromOffset(500, 30), TextSize = 22, Parent = gui })
+	topLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 44), Size = UDim2.fromOffset(760, 30), TextSize = 22, Parent = gui })
 	crosshair = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(30, 30), Text = "·", TextSize = 34, Parent = gui })
 	hidingLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.62, 0), Size = UDim2.fromOffset(500, 30), TextSize = 20, TextColor3 = Color3.fromRGB(180, 200, 255), Visible = false, Parent = gui })
 
@@ -125,7 +126,7 @@ function Hud.init(callbacks: Callbacks)
 	staminaBar = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(200, 200, 160), BorderSizePixel = 0, Parent = staminaBack })
 
 	-- 목표 패널
-	local objFrame = make("Frame", { Position = UDim2.fromOffset(16, 60), Size = UDim2.fromOffset(320, 178), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55, Parent = gui })
+	objFrame = make("Frame", { Position = UDim2.fromOffset(16, 60), Size = UDim2.fromOffset(320, 178), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55, Parent = gui })
 	corner(objFrame, 8)
 	make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingTop = UDim.new(0, 8), Parent = objFrame })
 	objectivesLabel = label({ Size = UDim2.new(1, -10, 1, -8), TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextSize = 15, RichText = true, Parent = objFrame })
@@ -381,11 +382,26 @@ function Hud.refresh()
 	local state = ReplicatedStorage:GetAttribute("RoundState") or "Intermission"
 	local timeLeft = ReplicatedStorage:GetAttribute("TimeLeft") or 0
 	local timeText = ("%d:%02d"):format(timeLeft // 60, timeLeft % 60)
-	if state == "Playing" then
+	local lobby = player:GetAttribute("InLobby") == true
+	objFrame.Visible = not lobby
+	bagFrame.Visible = not lobby
+	if lobby then
+		if craftPanel.Visible then
+			Hud.setCraftOpen(false)
+		end
+		local roomIndex = player:GetAttribute("LobbyRoom")
+		if typeof(roomIndex) == "number" then
+			topLabel.Text = ("방 %d · %s"):format(roomIndex, ReplicatedStorage:GetAttribute("LobbyRoom" .. roomIndex) or "")
+		elseif player:GetAttribute("Teleporting") == true then
+			topLabel.Text = "숲으로 이동하는 중…"
+		else
+			topLabel.Text = ("대기실 — 방 바닥에 올라서면 %d초 뒤 출발해요 (방 하나 최대 %d명)"):format(Config.Lobby.Countdown, Config.Lobby.MaxPlayers)
+		end
+	elseif state == "Playing" then
 		local status = if player:GetAttribute("Escaped") then "   ·   탈출 성공! 다른 사람을 기다리는 중" else ""
 		topLabel.Text = "남은 시간 " .. timeText .. status
 	elseif state == "Intermission" then
-		topLabel.Text = "곧 수색이 시작됩니다… " .. timeText
+		topLabel.Text = "같이 출발한 수색대원을 기다리는 중… " .. timeText
 	else
 		topLabel.Text = "라운드 종료"
 	end
@@ -442,6 +458,9 @@ function Hud.isCraftOpen(): boolean
 end
 
 function Hud.setCraftOpen(open: boolean)
+	if player:GetAttribute("InLobby") == true then
+		open = false -- 대기실에서는 제작 창을 열지 않음 (숲에 들어갈 때 가방이 비워짐)
+	end
 	craftPanel.Visible = open
 	if open then
 		notePanel.Visible = false

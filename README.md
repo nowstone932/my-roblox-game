@@ -37,8 +37,8 @@ src/
       Pickups.luau          재료 / 탈출 부품 / 쪽지
       Tools.luau            제작한 도구를 핫바에 실제 Tool로 넣기
       Combat.luau           제작, 도구 사용 (서버 판정)
-      MonsterAI.luau        숲지기 모델 + AI (배회, 소리 조사, 추격, 기절, 쓰러짐, 봉인)
-      Hiding.luau           옷장 숨기
+      MonsterAI.luau        숲지기 모델 + AI (배회, 소리 조사, 길찾기 추격, 수색, 집 안 진입, 기절, 쓰러짐, 봉인)
+      Hiding.luau           옷장 / 차 밑 숨기
       Objectives.luau       정문 / 트럭 / 무전 / 봉인 탈출 장치
       GameLoop.luau         라운드 진행, 탈출 처리, 엔딩
       Monetization.luau     게임패스 / 개발자 상품
@@ -49,6 +49,7 @@ src/
     Hud.luau                목표 패널, 가방, 제작대, 쪽지, 인트로/엔딩
     MonsterAnimator.luau    괴물 걷기/팔 뻗기/고개 꺾기 연출
     Audio.luau              소리 재생, 긴장/추격 BGM 연출, 괴물 3D 소리
+    Spectate.luau           죽거나 탈출하면 살아있는 동료 관전
 ```
 
 ## 다음에 해볼 만한 것

@@ -4,13 +4,16 @@
 -- 상태:
 --   Wander      배회 (가끔 플레이어 근처로 슬금슬금 옴)
 --   Investigate 소리(총소리, 트럭 시동, 무전)가 난 곳을 조사하러 감
---   Chase       플레이어를 보고 추격
+--   Chase       플레이어를 보고(또는 발소리를 듣고) 추격. 길찾기로 벽/집을 돌아서 옴
+--   Hunt        놓쳤으면 마지막으로 본 곳(+도망간 방향)으로 가서 주변과 근처 건물 안을 뒤짐
 --   Stalk       멀리서 가만히 서서 지켜봄 → 갑자기 돌진하거나, 사라졌다가 등 뒤 어딘가에 나타남
 --   Search      옷장에 숨는 걸 봤으면 옷장 앞에서 냄새를 맡음 → 확률적으로 문을 열어젖힘
 --   Stunned     섬광탄/덫에 걸려 잠시 멈춤
 --   Downed      체력이 0이 되어 쓰러짐 → 일정 시간 뒤 다시 일어남 (이때 봉인 말뚝 가능)
 --   Sealed      봉인됨 (영구 퇴치)
--- 옷장에 숨은 플레이어는 보지 못합니다. 나무 뒤에 숨으면 시야가 가려져요.
+-- 옷장/차 밑에 숨은 플레이어는 보지 못합니다. 나무 뒤에 숨으면 시야가 가려져요.
+-- 오두막에 들어갈 때는 몸을 숙여서(Crouch) 문으로 기어 들어옵니다.
+-- 라운드 시작 후 Config.Monster.StartGrace 초 동안은 둥지 근처만 돌아다녀요.
 
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
@@ -64,6 +67,24 @@ local lastPathGoal: Vector3? = nil
 
 local traps: { BasePart } = {}
 
+-- 똑똑한 추적용 상태
+local lastSeenVel = Vector3.zero
+local chaseGoal: Vector3? = nil -- 시야를 놓쳤을 때 향하는 곳 (마지막 위치 + 도망간 방향)
+local huntPoints: { Vector3 } = {}
+local huntUntil = 0
+local huntPauseUntil = 0
+local graceUntil = 0
+
+-- 숙이기 / 끼임 감지
+local normalHip = 6.5
+local crouching = false
+local wantsMove = false
+local stuckCheckTime = 0
+local stuckCheckPos: Vector3? = nil
+local stuckCount = 0
+local sidestepUntil = 0
+local sidestepGoal: Vector3? = nil
+
 -- 공포 연출용 상태
 local lastTargetTime = 0 -- 마지막으로 누군가를 쫓은 시각 (기습 순간이동 판단)
 local lastStalk = -999
@@ -81,7 +102,7 @@ local function setState(newState: string)
 	if state == newState then
 		return
 	end
-	if newState == "Chase" and (state == "Wander" or state == "Investigate") and root then
+	if newState == "Chase" and (state == "Wander" or state == "Investigate" or state == "Hunt") and root then
 		effect:FireAllClients("Scream", root.Position)
 	end
 	state = newState
@@ -248,6 +269,7 @@ local function canSee(char: Model, hrp: BasePart): boolean
 	return result == nil or result.Instance:IsDescendantOf(char)
 end
 
+-- 눈으로 본 플레이어 (가장 가까운)
 local function findTarget(): (Player?, BasePart?)
 	if not root then
 		return nil, nil
@@ -257,7 +279,7 @@ local function findTarget(): (Player?, BasePart?)
 		local char, hrp = aliveCharacter(player)
 		if char and hrp then
 			local dist = (hrp.Position - root.Position).Magnitude
-			if dist < bestDist and (dist < C.HearRange or canSee(char, hrp)) then
+			if dist < bestDist and canSee(char, hrp) then
 				best, bestPart, bestDist = player, hrp, dist
 			end
 		end
@@ -265,39 +287,142 @@ local function findTarget(): (Player?, BasePart?)
 	return best, bestPart
 end
 
+-- 귀로 들은 플레이어: 아주 가까이 있거나(HearRange), 달리는 발소리, 가까운 걸음 소리
+local function findHeard(): (Player?, BasePart?, number)
+	if not root then
+		return nil, nil, math.huge
+	end
+	local best, bestPart, bestDist = nil, nil, math.huge
+	for _, player in Players:GetPlayers() do
+		local char, hrp = aliveCharacter(player)
+		if char and hrp then
+			local dist = (hrp.Position - root.Position).Magnitude
+			local v = hrp.AssemblyLinearVelocity
+			local speed = Vector3.new(v.X, 0, v.Z).Magnitude
+			local heard = dist < C.HearRange
+				or (speed > 18 and dist < C.SprintHearRange)
+				or (speed > 4 and dist < C.WalkHearRange)
+			if heard and dist < bestDist then
+				best, bestPart, bestDist = player, hrp, dist
+			end
+		end
+	end
+	return best, bestPart, bestDist
+end
+
 ---------------------------------------------------------------------------
 -- 이동
 ---------------------------------------------------------------------------
+-- 오두막 안이나 문 근처인지 (margin = 건물 바깥으로 얼마나 더 넓게 볼지)
+local function nearBuilding(pos: Vector3, margin: number): boolean
+	for _, b in map.Buildings or {} do
+		local rel = b.cf:PointToObjectSpace(pos)
+		if math.abs(rel.X) < b.size.X / 2 + margin and math.abs(rel.Z) < b.size.Z / 2 + margin and rel.Y > -4 and rel.Y < b.size.Y + 8 then
+			return true
+		end
+	end
+	return false
+end
+
+local function feetY(): number
+	if not (root and humanoid) then
+		return 0
+	end
+	return root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
+end
+
+-- 괴물 위치에서 goal까지 벽 없이 바로 걸어갈 수 있는지 (무릎/가슴 높이로 확인)
+local function clearLine(goal: Vector3): boolean
+	if not root then
+		return false
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore: { Instance } = { model :: Instance }
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(ignore, player.Character)
+		end
+	end
+	params.FilterDescendantsInstances = ignore
+	params.RespectCanCollide = true -- 풀/잎처럼 통과되는 건 무시
+	local base = feetY()
+	for _, h in { 2.5, 5.5 } do
+		local from = Vector3.new(root.Position.X, base + h, root.Position.Z)
+		local to = Vector3.new(goal.X, base + h, goal.Z)
+		if Workspace:Raycast(from, to - from, params) then
+			return false
+		end
+	end
+	return true
+end
+
+local pathParams = {
+	AgentRadius = 2, -- 오두막 문(폭 6)으로 지나갈 수 있게
+	AgentHeight = 7, -- 숙이면 문(높이 8)을 지나감
+	AgentCanJump = false,
+	WaypointSpacing = 4,
+}
+
+local function computePath(goal: Vector3): boolean
+	if not root then
+		return false
+	end
+	local start = Vector3.new(root.Position.X, feetY() + 1, root.Position.Z)
+	-- 목표 지점이 막혀 있으면(나무 속, 벽 바로 앞 등) 근처 몇 곳을 대신 시도
+	local tries = { goal }
+	for k = 0, 3 do
+		local a = k * math.pi / 2
+		table.insert(tries, goal + Vector3.new(math.cos(a) * 5, 0, math.sin(a) * 5))
+	end
+	for _, g in tries do
+		local path = PathfindingService:CreatePath(pathParams)
+		local ok = pcall(function()
+			path:ComputeAsync(start, g)
+		end)
+		if not (humanoid and root) then
+			return false
+		end
+		if ok and path.Status == Enum.PathStatus.Success then
+			waypoints = path:GetWaypoints()
+			waypointIndex = math.min(2, #waypoints)
+			return true
+		end
+	end
+	waypoints = {}
+	return false
+end
+
 local function moveTo(goal: Vector3)
 	if not (humanoid and root) then
 		return
 	end
+	wantsMove = true
 	local now = os.clock()
-	if (goal - root.Position).Magnitude < 20 then
+
+	-- 끼어서 못 움직이면 잠깐 옆으로 비켜 걸음
+	if now < sidestepUntil and sidestepGoal then
+		humanoid:MoveTo(sidestepGoal)
+		return
+	end
+
+	-- 가깝고 벽이 없으면 그냥 똑바로 감
+	local flatDist = Vector3.new(goal.X - root.Position.X, 0, goal.Z - root.Position.Z).Magnitude
+	if flatDist < 25 and clearLine(goal) then
 		waypoints = {}
+		lastPathGoal = nil
 		humanoid:MoveTo(goal)
 		return
 	end
 
-	local interval = if state == "Chase" then 0.8 else 2.5
-	local goalMoved = lastPathGoal == nil or (goal - lastPathGoal).Magnitude > 8
-	if now - lastPathTime > interval and (goalMoved or #waypoints == 0 or now - lastPathTime > 3) then
+	-- 벽/집/바위가 가로막으면 길찾기로 돌아감
+	local interval = if state == "Chase" then 0.6 else 2.5
+	local goalMoved = lastPathGoal == nil or (goal - lastPathGoal).Magnitude > 6
+	local finished = #waypoints == 0 or waypointIndex >= #waypoints
+	if now - lastPathTime > interval and (goalMoved or finished or now - lastPathTime > 4) then
 		lastPathTime = now
 		lastPathGoal = goal
-		local path = PathfindingService:CreatePath({
-			AgentRadius = 3,
-			AgentHeight = 14,
-			AgentCanJump = false,
-		})
-		local ok = pcall(function()
-			path:ComputeAsync(root.Position, goal)
-		end)
-		if ok and path.Status == Enum.PathStatus.Success then
-			waypoints = path:GetWaypoints()
-			waypointIndex = math.min(2, #waypoints)
-		else
-			waypoints = {}
-		end
+		computePath(goal)
 		if not (humanoid and root) then
 			return
 		end
@@ -309,11 +434,80 @@ local function moveTo(goal: Vector3)
 	end
 	local wp = waypoints[waypointIndex]
 	local flat = Vector3.new(wp.Position.X - root.Position.X, 0, wp.Position.Z - root.Position.Z)
-	if flat.Magnitude < 4 and waypointIndex < #waypoints then
+	while flat.Magnitude < 3 and waypointIndex < #waypoints do
 		waypointIndex += 1
 		wp = waypoints[waypointIndex]
+		flat = Vector3.new(wp.Position.X - root.Position.X, 0, wp.Position.Z - root.Position.Z)
 	end
 	humanoid:MoveTo(wp.Position)
+end
+
+-- 집 안이나 문 앞이면 몸을 숙임 (서 있으면 문틀/지붕에 걸려서 못 들어감)
+local function updateCrouch()
+	if not (humanoid and root and model) then
+		return
+	end
+	local want = nearBuilding(root.Position, 7)
+	if not want and #waypoints > 0 then
+		local wp = waypoints[math.min(waypointIndex + 1, #waypoints)]
+		want = nearBuilding(wp.Position, 3)
+	end
+	if want ~= crouching then
+		crouching = want
+		humanoid.HipHeight = if want then normalHip * 0.35 else normalHip
+		model:SetAttribute("Crouch", want)
+	end
+end
+
+-- 1초마다 거의 안 움직였으면 끼인 것 → 길 다시 찾기, 두 번 연속이면 옆으로 비켜 걸음
+local function checkStuck(now: number)
+	if not root then
+		return
+	end
+	if now - stuckCheckTime < 1 then
+		return
+	end
+	local pos = root.Position
+	if wantsMove and humanoid and humanoid.WalkSpeed > 0 and stuckCheckPos and (pos - stuckCheckPos).Magnitude < 1.5 then
+		stuckCount += 1
+		lastPathTime = 0
+		lastPathGoal = nil
+		waypoints = {}
+		if stuckCount >= 2 then
+			local look = root.CFrame.LookVector
+			local side = Vector3.new(-look.Z, 0, look.X) * (if rng:NextNumber() < 0.5 then 1 else -1)
+			sidestepGoal = pos + side * 8 - Vector3.new(look.X, 0, look.Z) * 4
+			sidestepUntil = now + 1.2
+			stuckCount = 0
+		end
+	else
+		stuckCount = 0
+	end
+	stuckCheckPos = pos
+	stuckCheckTime = now
+	wantsMove = false
+end
+
+-- 놓친 곳 주변에서 뒤질 지점들: 근처 건물 안을 먼저, 그다음 주변 몇 곳
+local function startHunt(center: Vector3)
+	local now = os.clock()
+	huntPoints = {}
+	for _, b in map.Buildings or {} do
+		local inside = (b.cf * CFrame.new(0, 1, 2)).Position
+		if (inside - center).Magnitude < C.HuntRadius + 12 then
+			table.insert(huntPoints, inside)
+		end
+	end
+	for _ = 1, 3 do
+		local a = rng:NextNumber(0, math.pi * 2)
+		local r = rng:NextNumber(8, C.HuntRadius)
+		table.insert(huntPoints, center + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r))
+	end
+	table.insert(huntPoints, 1, center)
+	huntUntil = now + C.HuntTime
+	huntPauseUntil = 0
+	target = nil
+	setState("Hunt")
 end
 
 local function chaseSpeed(): number
@@ -328,7 +522,17 @@ local function tryAttack()
 		local char, hrp = aliveCharacter(player)
 		if char and hrp then
 			local flat = Vector3.new(hrp.Position.X - root.Position.X, 0, hrp.Position.Z - root.Position.Z)
-			if flat.Magnitude <= C.AttackRange and math.abs(hrp.Position.Y - root.Position.Y) < 12 then
+			local reachable = flat.Magnitude <= C.AttackRange and math.abs(hrp.Position.Y - root.Position.Y) < 12
+			if reachable then
+				-- 벽 너머로는 공격하지 않음
+				local params = RaycastParams.new()
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				params.FilterDescendantsInstances = { model :: Instance }
+				params.RespectCanCollide = true
+				local hit = Workspace:Raycast(root.Position, hrp.Position - root.Position, params)
+				reachable = hit == nil or hit.Instance:IsDescendantOf(char)
+			end
+			if reachable then
 				lastAttack = os.clock()
 				local hum = char:FindFirstChildOfClass("Humanoid")
 				if hum then
@@ -363,6 +567,19 @@ local function setEyes(color: Color3)
 end
 
 local function pickWanderGoal(): Vector3
+	-- 시작 유예 시간: 둥지(제단) 근처만 어슬렁거림
+	if os.clock() < graceUntil then
+		local nest = map.MonsterSpawn
+		return Vector3.new(nest.X + rng:NextNumber(-60, 60), 0, nest.Z + rng:NextNumber(-60, 60))
+	end
+	-- 가끔은 근처 오두막 안을 확인하러 들어감 (집 안이 무조건 안전하지 않게)
+	if root and map.Buildings and #map.Buildings > 0 and rng:NextNumber() < 0.2 then
+		local b = map.Buildings[rng:NextInteger(1, #map.Buildings)]
+		local inside = (b.cf * CFrame.new(0, 1, 2)).Position
+		if (inside - root.Position).Magnitude < 150 then
+			return inside
+		end
+	end
 	-- 일정 확률로 아무 플레이어 근처로 (긴장감)
 	if rng:NextNumber() < C.NearPlayerWanderChance then
 		local candidates = {}
@@ -441,7 +658,7 @@ end
 
 local function groundAt(pos: Vector3): Vector3?
 	local result = Workspace:Raycast(Vector3.new(pos.X, 80, pos.Z), Vector3.new(0, -100, 0))
-	if result and result.Position.Y < 2 and math.abs(pos.X) < map.HalfSize - 15 and math.abs(pos.Z) < map.HalfSize - 15 then
+	if result and result.Position.Y < 2 and math.abs(pos.X) < map.HalfSize - 15 and math.abs(pos.Z) < map.HalfSize - 15 and not nearBuilding(result.Position, 4) then
 		return result.Position
 	end
 	return nil
@@ -451,9 +668,11 @@ local function teleportTo(pos: Vector3)
 	if not (model and root) then
 		return
 	end
-	model:PivotTo(CFrame.new(pos + Vector3.new(0, 9, 0)))
+	model:PivotTo(CFrame.new(pos + Vector3.new(0, normalHip + 3, 0)))
 	waypoints = {}
 	lastPathGoal = nil
+	stuckCheckPos = nil
+	sidestepUntil = 0
 end
 
 -- 플레이어 등 뒤, 시야 밖 어딘가로 순간이동
@@ -542,6 +761,8 @@ local function update()
 	end
 
 	checkTraps()
+	checkStuck(now)
+	updateCrouch()
 	model:SetAttribute("Searching", false)
 
 	-- 옷장 뒤지기
@@ -611,6 +832,7 @@ local function update()
 	if player and hrp then
 		local dist = (hrp.Position - root.Position).Magnitude
 		local canStalk = (state == "Wander" or state == "Investigate")
+			and now > graceUntil
 			and dist > C.StalkMinDistance
 			and now - lastStalk > C.StalkCooldown
 			and rng:NextNumber() < C.StalkChance
@@ -623,52 +845,109 @@ local function update()
 		end
 		target = player
 		lastSeenPos = hrp.Position
+		lastSeenVel = hrp.AssemblyLinearVelocity
 		lastSeenTime = now
 		lastTargetTime = now
+		chaseGoal = nil
 		setState("Chase")
-	elseif state == "Chase" and now - lastSeenTime > C.LoseSightTime then
-		target = nil
-		wanderGoal = nil
-		setState("Wander")
+	else
+		-- 안 보여도 소리로 알아챔
+		local heardPlayer, heardHrp, heardDist = findHeard()
+		if heardPlayer and heardHrp then
+			if state == "Chase" or state == "Hunt" or heardDist < C.HearRange then
+				-- 쫓던 중이면 발소리를 따라 계속 쫓음 (벽 뒤라도 길찾기로 돌아옴)
+				target = heardPlayer
+				lastSeenPos = heardHrp.Position
+				lastSeenVel = heardHrp.AssemblyLinearVelocity
+				lastSeenTime = now
+				lastTargetTime = now
+				chaseGoal = nil
+				setState("Chase")
+			elseif state == "Wander" or state == "Investigate" then
+				-- 멀리서 발소리만 들림 → 확인하러 감
+				investigatePos = heardHrp.Position
+				investigateStart = now
+				setState("Investigate")
+			end
+		elseif state == "Chase" and lastSeenPos then
+			-- 놓침: 마지막으로 본 곳 + 도망가던 방향으로 조금 더 가봄
+			if not chaseGoal then
+				local v = Vector3.new(lastSeenVel.X, 0, lastSeenVel.Z)
+				local ahead = if v.Magnitude > 1 then v.Unit * math.min(v.Magnitude * 1.2, 14) else Vector3.zero
+				chaseGoal = lastSeenPos + ahead
+			end
+			local goal = chaseGoal :: Vector3
+			local arrived = Vector3.new(goal.X - root.Position.X, 0, goal.Z - root.Position.Z).Magnitude < 6
+			if arrived or now - lastSeenTime > C.LoseSightTime then
+				startHunt(goal)
+			end
+		end
 	end
 
 	if state == "Chase" and lastSeenPos then
 		lastTargetTime = now
-		-- 돌진
-		local dist = (lastSeenPos - root.Position).Magnitude
-		if dist > 12 and dist < 30 and now - lastLunge > C.LungeCooldown and rng:NextNumber() < 0.3 then
+		local goalPos = chaseGoal or lastSeenPos
+		-- 돌진 (보이고 길이 뚫려 있을 때만)
+		local dist = (goalPos - root.Position).Magnitude
+		local direct = chaseGoal == nil and clearLine(goalPos)
+		if direct and dist > 12 and dist < 30 and now - lastLunge > C.LungeCooldown and rng:NextNumber() < 0.3 then
 			lastLunge = now
 			lungeUntil = now + C.LungeTime
 			effect:FireAllClients("Scream", root.Position)
 		end
 		local speed = chaseSpeed()
-		if now < lungeUntil then
+		if now < lungeUntil and direct then
 			speed *= C.LungeSpeedMultiplier
 		elseif math.sin(now * 1.7) > 0.85 then
 			speed *= 0.6 -- 가끔 멈칫하며 고개를 꺾음 (단조롭지 않게)
 		end
+		if crouching then
+			speed *= 0.75
+		end
 		humanoid.WalkSpeed = speed
-		-- 정면으로만 오지 않고 살짝 옆으로 돌아 들어옴
+		-- 탁 트인 곳에서는 정면으로만 오지 않고 살짝 옆으로 돌아 들어옴
 		local side = Vector3.new(math.sin(now * 0.6), 0, math.cos(now * 0.6)) * math.min(dist * 0.15, 6)
-		moveTo(lastSeenPos + (if dist > 15 then side else Vector3.zero))
+		moveTo(goalPos + (if dist > 15 and direct and not crouching then side else Vector3.zero))
+	elseif state == "Hunt" then
+		-- 마지막으로 본 곳 주변과 근처 건물 안을 차례로 뒤짐
+		local goal = huntPoints[1]
+		if not goal or now > huntUntil then
+			wanderGoal = nil
+			setState("Wander")
+		elseif now < huntPauseUntil then
+			humanoid.WalkSpeed = 0
+			humanoid:MoveTo(root.Position)
+			model:SetAttribute("Searching", true) -- 킁킁 냄새 맡기
+		else
+			humanoid.WalkSpeed = chaseSpeed() * (if crouching then 0.6 else 0.75)
+			moveTo(goal)
+			if Vector3.new(goal.X - root.Position.X, 0, goal.Z - root.Position.Z).Magnitude < 6 then
+				table.remove(huntPoints, 1)
+				huntPauseUntil = now + rng:NextNumber(0.8, 1.6)
+			end
+		end
 	elseif state == "Investigate" and investigatePos then
-		humanoid.WalkSpeed = chaseSpeed() * 0.85
+		humanoid.WalkSpeed = chaseSpeed() * (if crouching then 0.6 else 0.85)
 		moveTo(investigatePos)
-		if (investigatePos - root.Position).Magnitude < 12 or now - investigateStart > 18 then
+		if Vector3.new(investigatePos.X - root.Position.X, 0, investigatePos.Z - root.Position.Z).Magnitude < 8 then
+			-- 도착했는데 아무도 없으면 주변을 조금 뒤져봄
+			startHunt(investigatePos)
+			huntUntil = now + C.HuntTime * 0.5
+		elseif now - investigateStart > 25 then
 			wanderGoal = nil
 			setState("Wander")
 		end
 	else
-		-- 오래 아무도 못 찾았으면 기습
-		if now - lastTargetTime > C.AmbushAfter then
+		-- 오래 아무도 못 찾았으면 기습 (시작 유예 시간에는 안 함)
+		if now > graceUntil and now - lastTargetTime > C.AmbushAfter then
 			lastTargetTime = now
 			if ambush() then
 				return
 			end
 		end
-		humanoid.WalkSpeed = C.WanderSpeed + rage * 0.5
-		local reached = wanderGoal ~= nil and (wanderGoal - root.Position).Magnitude < 10
-		if wanderGoal == nil or reached or now - wanderStarted > 20 then
+		humanoid.WalkSpeed = (C.WanderSpeed + rage * 0.5) * (if crouching then 0.75 else 1)
+		local reached = wanderGoal ~= nil and Vector3.new((wanderGoal :: Vector3).X - root.Position.X, 0, (wanderGoal :: Vector3).Z - root.Position.Z).Magnitude < 8
+		if wanderGoal == nil or reached or now - wanderStarted > 25 then
 			wanderGoal = pickWanderGoal()
 			wanderStarted = now
 		end
@@ -735,8 +1014,15 @@ local function spawnMonster()
 	investigatePos = nil
 	waypoints = {}
 	traps = {}
-	lastTargetTime = os.clock()
-	lastStalk = os.clock() - C.StalkCooldown + 15
+	graceUntil = os.clock() + C.StartGrace
+	lastTargetTime = graceUntil -- 유예가 끝나고 AmbushAfter 초 뒤부터 기습 가능
+	lastStalk = graceUntil - C.StalkCooldown + 15
+	huntPoints = {}
+	chaseGoal = nil
+	crouching = false
+	stuckCheckPos = nil
+	sidestepUntil = 0
+	normalHip = (humanoid :: Humanoid).HipHeight
 	stalkTarget = nil
 	searchPos, searchTarget, searchArrived = nil, nil, nil
 end
@@ -812,7 +1098,9 @@ function MonsterAI.damage(amount: number, byPlayer: Player?)
 		if hrp then
 			target = byPlayer
 			lastSeenPos = hrp.Position
+			lastSeenVel = hrp.AssemblyLinearVelocity
 			lastSeenTime = os.clock()
+			chaseGoal = nil
 			setState("Chase")
 		end
 	end

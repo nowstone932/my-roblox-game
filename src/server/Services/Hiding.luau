@@ -1,5 +1,6 @@
--- 옷장에 숨기
+-- 옷장 / 차 밑에 숨기
 -- 숨어 있는 동안 괴물은 그 플레이어를 보지 못합니다.
+-- (숨는 걸 들키면 괴물이 와서 뒤짐 → 확률적으로 옷장 문을 뜯거나 차 밑에서 끌어냄)
 -- 단, 괴물이 바로 근처(BlockedRange)에 있으면 숨을 수 없고, 오래 있으면 숨이 차서 나옵니다.
 
 local Players = game:GetService("Players")
@@ -15,7 +16,7 @@ local H = Config.Hiding
 
 local Hiding = {}
 
-type ClosetState = { model: Model, hidePoint: CFrame, prompt: ProximityPrompt, occupant: Player?, token: number }
+type ClosetState = { model: Model, hidePoint: CFrame, kind: string, prompt: ProximityPrompt, occupant: Player?, token: number }
 local closets: { ClosetState } = {}
 local playerCloset: { [Player]: ClosetState } = {}
 
@@ -35,7 +36,10 @@ function Hiding.release(player: Player, message: string?)
 	closet.prompt.ActionText = "숨기"
 	player:SetAttribute("Hiding", false)
 	player:SetAttribute("HideEnds", nil)
-	Sfx.all("ClosetDoor", exitPoint(closet).Position)
+	player:SetAttribute("HideKind", nil)
+	if closet.kind == "Closet" then
+		Sfx.all("ClosetDoor", exitPoint(closet).Position)
+	end
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if char and hrp and hrp:IsA("BasePart") then
@@ -66,13 +70,16 @@ local function hide(player: Player, closet: ClosetState)
 	closet.token += 1
 	closet.prompt.ActionText = "나오기"
 	playerCloset[player] = closet
-	Sfx.all("ClosetDoor", exitPoint(closet).Position)
+	if closet.kind == "Closet" then
+		Sfx.all("ClosetDoor", exitPoint(closet).Position)
+	end
 	char:PivotTo(closet.hidePoint)
 	hrp.Anchored = true
+	player:SetAttribute("HideKind", closet.kind)
 	player:SetAttribute("Hiding", true)
 	player:SetAttribute("HideEnds", os.time() + H.MaxTime)
 
-	-- 쫓기던 중이었다면 괴물이 옷장을 뒤지러 옴
+	-- 쫓기던 중이었다면 괴물이 옷장/차 밑을 뒤지러 옴
 	MonsterAI.notifyHide(player, exitPoint(closet).Position)
 
 	local myToken = closet.token
@@ -86,7 +93,9 @@ end
 function Hiding.init(mapInfo)
 	-- 괴물이 옷장 문을 뜯어냈을 때
 	MonsterAI.onClosetRipped = function(player: Player)
-		Hiding.release(player, "숲지기가 옷장 문을 뜯어냈다!")
+		local closet = playerCloset[player]
+		local message = if closet and closet.kind == "Vehicle" then "숲지기가 차 밑에서 끌어냈다!" else "숲지기가 옷장 문을 뜯어냈다!"
+		Hiding.release(player, message)
 		local char = player.Character
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
 		if hum then
@@ -102,13 +111,14 @@ function Hiding.init(mapInfo)
 	for _, entry in mapInfo.Closets do
 		local promptPart = entry.model.PrimaryPart
 		local prompt = Instance.new("ProximityPrompt")
+		local kind = entry.kind or "Closet"
 		prompt.ActionText = "숨기"
-		prompt.ObjectText = "옷장"
-		prompt.HoldDuration = 0.3
+		prompt.ObjectText = if kind == "Vehicle" then "차 밑" else "옷장"
+		prompt.HoldDuration = if kind == "Vehicle" then 0.6 else 0.3 -- 차 밑은 기어들어가느라 조금 더 걸림
 		prompt.MaxActivationDistance = 7
 		prompt.RequiresLineOfSight = false
 		prompt.Parent = promptPart
-		local closet: ClosetState = { model = entry.model, hidePoint = entry.hidePoint, prompt = prompt, occupant = nil, token = 0 }
+		local closet: ClosetState = { model = entry.model, hidePoint = entry.hidePoint, kind = kind, prompt = prompt, occupant = nil, token = 0 }
 		table.insert(closets, closet)
 
 		prompt.Triggered:Connect(function(player)
@@ -131,6 +141,7 @@ function Hiding.init(mapInfo)
 			closet.prompt.ActionText = "숨기"
 		end
 		player:SetAttribute("Hiding", false)
+		player:SetAttribute("HideKind", nil)
 	end
 	Players.PlayerRemoving:Connect(cleanup)
 	local function onPlayer(player: Player)

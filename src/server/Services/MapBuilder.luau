@@ -26,7 +26,8 @@ export type MapInfo = {
 	Folder: Folder,
 	Spots: { [string]: { Vector3 } },
 	NoteSpots: { [string]: Vector3 },
-	Closets: { { model: Model, hidePoint: CFrame } },
+	Closets: { { model: Model, hidePoint: CFrame, kind: string } }, -- kind: "Closet" 옷장 / "Vehicle" 차 밑
+	Buildings: { { cf: CFrame, size: Vector3 } }, -- 오두막/창고 (괴물이 몸을 숙이고 들어감)
 	GateDoor: BasePart,
 	GateLamp: BasePart,
 	ExitZone: BasePart,
@@ -106,6 +107,10 @@ function MapBuilder.build(): MapInfo
 	end
 	local noteSpots: { [string]: Vector3 } = {}
 	local closets = {}
+	local buildings = {}
+	local function addBuilding(cf: CFrame)
+		table.insert(buildings, { cf = cf, size = Build.CabinSize })
+	end
 
 	-- 나무를 심으면 안 되는 구역 (중심, 반지름)
 	local clearings: { { Vector3 | number } } = {}
@@ -124,13 +129,29 @@ function MapBuilder.build(): MapInfo
 			CanQuery = false,
 		})
 	end
-	for _, w in {
-		{ Vector3.new(size, 80, 2), Vector3.new(0, 40, -half) },
-		{ Vector3.new(size, 80, 2), Vector3.new(0, 40, half) },
-		{ Vector3.new(2, 80, size), Vector3.new(-half, 40, 0) },
-		{ Vector3.new(2, 80, size), Vector3.new(half, 40, 0) },
-	} do
-		Build.part(folder, w[1], CFrame.new(w[2]), Color3.new(), nil, { Transparency = 1, Name = "Boundary" })
+	-- 맵 경계: 눈에 보이는 높은 통나무 울타리 + 그 위로 아주 높은 투명 벽 (넘어갈 수 없음)
+	local walls = Instance.new("Folder")
+	walls.Name = "BoundaryWalls"
+	walls.Parent = folder
+	local wallH = 26
+	local corners = { Vector3.new(-half, 0, -half), Vector3.new(half, 0, -half), Vector3.new(half, 0, half), Vector3.new(-half, 0, half) }
+	for i = 1, 4 do
+		local a, b = corners[i], corners[(i % 4) + 1]
+		local mid = (a + b) / 2
+		local len = (b - a).Magnitude + 4
+		local cf = CFrame.lookAt(mid, b)
+		Build.part(walls, Vector3.new(3, wallH, len), cf * CFrame.new(0, wallH / 2, 0), Color3.fromRGB(38, 28, 20), Enum.Material.WoodPlanks, { Name = "BoundaryWall" })
+		-- 통나무 기둥
+		local posts = math.floor(len / 8)
+		for k = 0, posts do
+			local p = a:Lerp(b, k / posts)
+			Build.part(walls, Vector3.new(wallH + 4, 2.2, 2.2), CFrame.new(p + Vector3.new(0, (wallH + 4) / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), C.Bark, Enum.Material.Wood, {
+				Shape = Enum.PartType.Cylinder,
+				CanQuery = false,
+			})
+		end
+		-- 투명 벽 (높이 300) : 아무리 높이 올라가도 못 넘어감
+		Build.part(walls, Vector3.new(6, 300, len), cf * CFrame.new(0, 150, 0), Color3.new(), nil, { Transparency = 1, Name = "Boundary", CanQuery = false })
 	end
 
 	local props = Instance.new("Folder")
@@ -164,7 +185,8 @@ function MapBuilder.build(): MapInfo
 	-- 시작 지점: 고장난 수색대 차
 	-----------------------------------------------------------------------
 	local carCf = CFrame.new(10, 0, 272) * CFrame.Angles(0, math.rad(8), 0)
-	Build.carHulk(props, carCf, Color3.fromRGB(40, 60, 45))
+	local carHide, carHidePoint = Build.carHulk(props, carCf, Color3.fromRGB(40, 60, 45))
+	table.insert(closets, { model = carHide, hidePoint = carHidePoint, kind = "Vehicle" })
 	local hazard = Build.part(props, Vector3.new(0.6, 0.6, 0.6), carCf * CFrame.new(0, 3.2, -6), Color3.fromRGB(255, 120, 0), Enum.Material.Neon)
 	Build.light(hazard, Color3.fromRGB(255, 120, 0), 18, 1.2, true)
 	noteSpots.Car = (carCf * CFrame.new(0, 3.05, -4)).Position -- 보닛 위
@@ -198,8 +220,9 @@ function MapBuilder.build(): MapInfo
 	for i, cf in cabinCfs do
 		local _, cabinSpots, closetCf, doorFront = Build.cabin(camp, cf, "Cabin" .. i)
 		addSpots(cabinSpots)
+		addBuilding(cf)
 		local closet, hidePoint = Build.closet(camp, closetCf)
-		table.insert(closets, { model = closet, hidePoint = hidePoint })
+		table.insert(closets, { model = closet, hidePoint = hidePoint, kind = "Closet" })
 		Build.lanternPost(camp, doorFront * CFrame.new(4, -1, 0))
 		if i == 1 then
 			noteSpots.Camp = (cf * CFrame.new(-4, 4.25, 2)).Position -- 반장 오두막 탁자
@@ -259,7 +282,8 @@ function MapBuilder.build(): MapInfo
 	noteSpots.Sawmill = (sawCf * CFrame.new(5, 3, 0)).Position
 
 	-- 벌목 트럭 (북쪽을 바라봄)
-	local truck = Build.truck(camp, CFrame.new(18, 0, 50))
+	local truck, truckHide, truckHidePoint = Build.truck(camp, CFrame.new(18, 0, 50))
+	table.insert(closets, { model = truckHide, hidePoint = truckHidePoint, kind = "Vehicle" })
 
 	for _, pos in { Vector3.new(-20, 0, 60), Vector3.new(24, 0, 112), Vector3.new(-14, 0, 140) } do
 		Build.crate(camp, CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6), 0))
@@ -369,8 +393,9 @@ function MapBuilder.build(): MapInfo
 	local shedCf = CFrame.lookAt(gasPos + Vector3.new(0, 0, 10), gasPos + Vector3.new(0, 0, -10))
 	local _, shedSpots, shedCloset = Build.cabin(gas, shedCf, "GasShed")
 	addSpots(shedSpots)
+	addBuilding(shedCf)
 	local closet, hidePoint = Build.closet(gas, shedCloset)
-	table.insert(closets, { model = closet, hidePoint = hidePoint })
+	table.insert(closets, { model = closet, hidePoint = hidePoint, kind = "Closet" })
 	for _, x in { -7.5, -2.5, 2.5, 7.5 } do
 		addSpot("Pumps", gasPos + Vector3.new(x, 0, -11.5))
 	end
@@ -391,7 +416,8 @@ function MapBuilder.build(): MapInfo
 	for i = 1, 6 do
 		local pos = junkPos + Vector3.new(rng:NextNumber(-22, 22), 0, rng:NextNumber(-22, 22))
 		local carCf = CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
-		Build.carHulk(gas, carCf, junkColors[(i % #junkColors) + 1])
+		local junkHide, junkHidePoint = Build.carHulk(gas, carCf, junkColors[(i % #junkColors) + 1])
+		table.insert(closets, { model = junkHide, hidePoint = junkHidePoint, kind = "Vehicle" })
 		addSpot("CarHood", (carCf * CFrame.new(0, 3.05, -4)).Position)
 		addSpot("Junk", (carCf * CFrame.new(4.5, 0, rng:NextNumber(-4, 4))).Position)
 	end
@@ -477,10 +503,11 @@ function MapBuilder.build(): MapInfo
 	local genCf = CFrame.lookAt(Vector3.new(42, 0, fenceZ + 30), Vector3.new(0, 0, fenceZ + 30))
 	clear(genCf.Position, 22)
 	local _, genSpots, genCloset = Build.cabin(gateFolder, genCf, "GeneratorShed")
+	addBuilding(genCf)
 	genSpots.FuseBox = nil -- 발전기 바로 옆이라 퓨즈를 두지 않음
 	addSpots(genSpots)
 	local closet2, hide2 = Build.closet(gateFolder, genCloset)
-	table.insert(closets, { model = closet2, hidePoint = hide2 })
+	table.insert(closets, { model = closet2, hidePoint = hide2, kind = "Closet" })
 	local generator = Build.part(gateFolder, Vector3.new(5, 4, 3.5), genCf * CFrame.new(2, 3, 3), Color3.fromRGB(70, 80, 60), Enum.Material.Metal, { Name = "Generator" })
 	for i = 1, Config.Escape.FusesRequired do
 		local slot = Build.part(gateFolder, Vector3.new(0.6, 0.9, 0.2), generator.CFrame * CFrame.new(-1.5 + (i - 1) * 1.5, 0.8, -1.85), Color3.fromRGB(40, 40, 40), Enum.Material.Neon, {
@@ -597,6 +624,7 @@ function MapBuilder.build(): MapInfo
 		Spots = spots,
 		NoteSpots = noteSpots,
 		Closets = closets,
+		Buildings = buildings,
 		GateDoor = gateDoor,
 		GateLamp = gateLamp,
 		ExitZone = exitZone,
@@ -605,7 +633,8 @@ function MapBuilder.build(): MapInfo
 		Radio = radio,
 		Helipad = helipad,
 		SafeRoom = safeRoom,
-		MonsterSpawn = altarPos + Vector3.new(0, 4, -10),
+		-- 괴물 처음 위치: 제단 뒤쪽 (시작 지점에서 가장 먼 북동쪽). 처음 Config.Monster.StartGrace 초 동안은 이 근처만 돌아다님
+		MonsterSpawn = altarPos + Vector3.new(20, 4, -28),
 		HalfSize = half,
 		isOpenSpot = isOpenSpot,
 	}

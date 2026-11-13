@@ -13,7 +13,8 @@
 --   InRound  : 지금 살아서 숲을 돌아다니는 중
 --
 -- 플레이 중: 4가지 탈출 방법 중 아무거나로 탈출하면 성공 (Objectives.luau 참고)
--- 죽으면 그 라운드는 관전 (부활 상품으로 되살아날 수 있음). 들고 있던 탈출 부품은 떨어짐.
+-- 죽으면 그 라운드는 살아있는 동료를 관전 (부활 상품으로 되살아날 수 있음). 들고 있던 탈출 부품은 떨어짐.
+-- 라운드는 모두 죽거나 탈출해야(또는 시간이 다 되어야) 끝남. 한 명이 죽어도 계속됨.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -337,6 +338,7 @@ end
 
 local function onPlayerAdded(player: Player)
 	player.CameraMode = Enum.CameraMode.LockFirstPerson
+	player.DevEnableMouseLock = false -- 쉬프트락 끄기 (1인칭 게임 + Shift는 달리기)
 	setupLeaderstats(player)
 	Inventory.reset(player)
 	player.CharacterAdded:Connect(function(character)
@@ -422,7 +424,8 @@ function GameLoop.init(mapInfo, options: { matchServer: boolean, lobbySpawn: CFr
 	isMatchServer = options.matchServer
 	lobbySpawn = options.lobbySpawn
 	roundState = if isMatchServer then "Intermission" else "Idle"
-	Players.CharacterAutoLoads = false -- 죽으면 라운드 끝날 때까지 관전
+	Players.CharacterAutoLoads = false -- 죽으면 라운드 끝날 때까지 관전 (client/Spectate.luau)
+	game:GetService("StarterPlayer").EnableMouseLockOption = false -- 쉬프트락 끄기
 
 	Objectives.init(map, onEscape)
 	MonsterAI.onSealed = Objectives.onSealed

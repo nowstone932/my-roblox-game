@@ -15,6 +15,10 @@
 --   range   : 3D 소리일 때 들리는 최대 거리(스터드). 이 값이 있으면 "그 위치에서" 소리가 남
 --   music   : true면 "음악" 그룹 (설정에서 음악 볼륨만 따로 줄일 수 있게)
 --
+-- 지금 들어 있는 번호는 Creator Store(로블록스 공식 무료 음원 위주)에서 골라 넣은 "후보"예요.
+-- 클라우드에서는 직접 들어볼 수 없어서, 실제로 어울리는지/재생되는지는 Studio에서 확인해야 해요.
+-- 맘에 안 들면 그 줄 번호만 바꾸거나 0으로 두면 됩니다.
+--
 -- 소리를 못 불러오면 게임은 멈추지 않고 그 소리만 조용히 빠집니다.
 -- 대신 플레이 시작할 때 출력(Output) 창에 "불러오지 못한 소리" 목록이 한 번 나와요.
 
@@ -39,64 +43,64 @@ SoundList.Sounds = {
 	-------------------------------------------------------------------------
 	-- 배경음악 / 배경음 (반복)
 	-------------------------------------------------------------------------
-	LobbyMusic = { id = 0, volume = 0.35, looped = true, music = true }, -- 대기 시간 음악 (잔잔하고 불길한 피아노 등)
-	ForestAmbience = { id = 0, volume = 0.5, looped = true, music = true }, -- 숲 배경음: 바람, 귀뚜라미, 부엉이
-	TensionMusic = { id = 0, volume = 0.6, looped = true, music = true }, -- 긴장 음악: 괴물이 가까울수록 커짐 (낮은 드론음)
-	ChaseMusic = { id = 0, volume = 0.7, looped = true, music = true }, -- 추격 음악: 괴물이 쫓아올 때 (빠른 북소리/현악)
-	Heartbeat = { id = 0, volume = 1, looped = true }, -- 심장 소리: 괴물이 가깝거나 체력이 낮을 때
+	LobbyMusic = { id = 181730439, volume = 0.35, looped = true, music = true }, -- 대기 시간 음악 (잔잔하고 불길한 피아노 등)
+	ForestAmbience = { id = 9112781510, volume = 0.5, looped = true, music = true }, -- 숲 배경음: 바람, 귀뚜라미, 부엉이
+	TensionMusic = { id = 9040210932, volume = 0.6, looped = true, music = true }, -- 긴장 음악: 괴물이 가까울수록 커짐 (낮은 드론음)
+	ChaseMusic = { id = 9042675817, volume = 0.7, looped = true, music = true }, -- 추격 음악: 괴물이 쫓아올 때 (빠른 북소리/현악)
+	Heartbeat = { id = 176554627, volume = 1, looped = true }, -- 심장 소리: 괴물이 가깝거나 체력이 낮을 때
 
 	-------------------------------------------------------------------------
 	-- 괴물 (3D: 괴물 위치에서 들림 → 소리로 방향을 알 수 있음)
 	-------------------------------------------------------------------------
-	MonsterBreath = { id = 0, volume = 0.8, looped = true, range = 60 }, -- 괴물 숨소리 (반복, 몸에 붙어서 따라다님)
-	MonsterGrowl = { id = 0, volume = 1, range = 90 }, -- 가끔 내는 낮은 으르렁 소리
-	MonsterScream = { id = 0, volume = 1.2, range = 300 }, -- 플레이어 발견 시 비명/포효
-	MonsterFootstep = { id = "rbxasset://sounds/action_footsteps_plastic.mp3", volume = 1.5, pitch = 0.45, range = 70 }, -- 무거운 발소리 (임시: 기본 발소리를 낮게)
-	MonsterHurt = { id = 0, volume = 1, range = 120 }, -- 괴물이 맞았을 때
-	MonsterVanish = { id = 0, volume = 0.9, range = 80 }, -- 연기 속으로 사라질 때 (휙~ 바람 소리)
-	MonsterSealed = { id = 0, volume = 1.2, range = 300 }, -- 봉인 성공 (마법/폭발음)
+	MonsterBreath = { id = 9116295304, volume = 0.8, looped = true, range = 60 }, -- 괴물 숨소리 (반복, 몸에 붙어서 따라다님)
+	MonsterGrowl = { id = 9125470501, volume = 1, range = 90 }, -- 가끔 내는 낮은 으르렁 소리
+	MonsterScream = { id = 9113985604, volume = 1.2, range = 300 }, -- 플레이어 발견 시 비명/포효
+	MonsterFootstep = { id = 9114523636, volume = 1.2, pitch = 0.6, range = 70 }, -- 무거운 발소리 (안 들리면 "rbxasset://sounds/action_footsteps_plastic.mp3" 로 바꾸기)
+	MonsterHurt = { id = 9125476001, volume = 1, range = 120 }, -- 괴물이 맞았을 때
+	MonsterVanish = { id = 9114323612, volume = 0.9, range = 80 }, -- 연기 속으로 사라질 때 (휙~ 바람 소리)
+	MonsterSealed = { id = 9116384799, volume = 1.2, range = 300 }, -- 봉인 성공 (마법/폭발음)
 
 	-------------------------------------------------------------------------
 	-- 플레이어 행동
 	-------------------------------------------------------------------------
 	Pickup = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.5, pitch = 1.3 }, -- 재료 줍기 (임시: 기본 딩 소리)
 	QuestPickup = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.7, pitch = 0.8 }, -- 탈출 부품 줍기 (임시)
-	NoteOpen = { id = 0, volume = 0.6 }, -- 쪽지 읽기 (종이 바스락)
+	NoteOpen = { id = 3657879622, volume = 0.6 }, -- 쪽지 읽기 (종이 바스락)
 	Craft = { id = "rbxasset://sounds/unsheath.wav", volume = 0.6 }, -- 제작 완료 (임시: 칼 뽑는 소리)
-	FlareGun = { id = 0, volume = 1, range = 250 }, -- 조명탄 총 발사
+	FlareGun = { id = 2811598570, volume = 1, range = 250 }, -- 조명탄 총 발사
 	AxeSwing = { id = "rbxasset://sounds/swordslash.wav", volume = 0.8, pitch = 0.8, range = 60 }, -- 도끼 휘두르기 (임시: 칼 휘두르는 소리)
-	Flashbang = { id = 0, volume = 1.2, range = 200 }, -- 섬광탄 폭발
-	TrapSet = { id = 0, volume = 0.8, range = 40 }, -- 곰덫 설치 (철컥)
-	TrapSnap = { id = 0, volume = 1.2, range = 150 }, -- 곰덫이 괴물을 물었을 때 (쾅!)
-	Heal = { id = 0, volume = 0.7 }, -- 구급상자/부활
-	PlayerHurt = { id = 0, volume = 1 }, -- 괴물에게 맞음
-	Downed = { id = 0, volume = 0.9 }, -- 쓰러짐
-	ClosetDoor = { id = 0, volume = 0.9, range = 50 }, -- 옷장 문 여닫기 (끼익)
+	Flashbang = { id = 9114363548, volume = 1.2, range = 200 }, -- 섬광탄 폭발
+	TrapSet = { id = 9120094799, volume = 0.8, range = 40 }, -- 곰덫 설치 (철컥)
+	TrapSnap = { id = 9116669896, volume = 1.2, range = 150 }, -- 곰덫이 괴물을 물었을 때 (쾅!)
+	Heal = { id = 9125986205, volume = 0.7 }, -- 구급상자/부활
+	PlayerHurt = { id = 9113511616, volume = 1 }, -- 괴물에게 맞음
+	Downed = { id = 9113511616, volume = 0.9, pitch = 0.6 }, -- 쓰러짐
+	ClosetDoor = { id = 9120839174, volume = 0.9, range = 50 }, -- 옷장 문 여닫기 (끼익)
 
 	-------------------------------------------------------------------------
 	-- 탈출 장치
 	-------------------------------------------------------------------------
-	Install = { id = 0, volume = 0.9, range = 60 }, -- 퓨즈/부품/안테나 끼우기 (철컥)
-	Generator = { id = 0, volume = 1, range = 200 }, -- 발전기 가동 (부르릉)
-	GateOpen = { id = 0, volume = 1, range = 200 }, -- 철문 올라가는 소리
-	TruckEngine = { id = 0, volume = 1, looped = true, range = 250 }, -- 트럭 엔진 (시동 후 반복)
-	RadioCall = { id = 0, volume = 0.9, range = 80 }, -- 무전기 지직거림
-	Helicopter = { id = 0, volume = 1, looped = true, range = 400 }, -- 헬기 프로펠러 (반복)
+	Install = { id = 9114436019, volume = 0.9, range = 60 }, -- 퓨즈/부품/안테나 끼우기 (철컥)
+	Generator = { id = 9113910422, volume = 1, range = 200 }, -- 발전기 가동 (부르릉)
+	GateOpen = { id = 9119630175, volume = 1, range = 200 }, -- 철문 올라가는 소리
+	TruckEngine = { id = 9113005707, volume = 1, looped = true, range = 250 }, -- 트럭 엔진 (시동 후 반복)
+	RadioCall = { id = 9117748085, volume = 0.9, range = 80 }, -- 무전기 지직거림
+	Helicopter = { id = 9114504059, volume = 1, looped = true, range = 400 }, -- 헬기 프로펠러 (반복)
 
 	-------------------------------------------------------------------------
 	-- 공포 이벤트
 	-------------------------------------------------------------------------
-	Whisper = { id = 0, volume = 0.8 }, -- 환청 속삭임
-	TwigSnap = { id = 0, volume = 1, range = 40 }, -- 등 뒤에서 나뭇가지 부러짐
-	Blackout = { id = 0, volume = 0.8 }, -- 정전 (전기 꺼지는 소리)
-	Stinger = { id = 0, volume = 0.9 }, -- 깜짝 효과음 (유령이 보일 때)
+	Whisper = { id = 9126214337, volume = 0.8 }, -- 환청 속삭임
+	TwigSnap = { id = 9120827361, volume = 1, range = 40 }, -- 등 뒤에서 나뭇가지 부러짐
+	Blackout = { id = 9117870273, volume = 0.8 }, -- 정전 (전기 꺼지는 소리)
+	Stinger = { id = 9125712561, volume = 0.9 }, -- 깜짝 효과음 (유령이 보일 때)
 
 	-------------------------------------------------------------------------
 	-- 라운드 / 엔딩
 	-------------------------------------------------------------------------
-	RoundStart = { id = 0, volume = 0.8, music = true }, -- 라운드 시작 (낮은 종소리 등)
-	Victory = { id = 0, volume = 0.9, music = true }, -- 탈출 성공 짧은 음악
-	Defeat = { id = 0, volume = 0.9, music = true }, -- 사망/시간 초과 짧은 음악
+	RoundStart = { id = 9114224217, volume = 0.8, music = true }, -- 라운드 시작 (낮은 종소리 등)
+	Victory = { id = 1507116849, volume = 0.9, music = true }, -- 탈출 성공 짧은 음악
+	Defeat = { id = 9114571719, volume = 0.9, music = true }, -- 사망/시간 초과 짧은 음악
 }
 
 -- id 칸 값을 실제 SoundId 문자열로 바꿔줌. 비어 있으면 nil

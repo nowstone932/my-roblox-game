@@ -14,6 +14,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Audio = require(script.Parent.Audio)
 local Hud = require(script.Parent.Hud)
 local MonsterAnimator = require(script.Parent.MonsterAnimator)
+local Spectate = require(script.Parent.Spectate)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -31,6 +32,7 @@ Hud.init({
 })
 MonsterAnimator.start()
 Audio.init()
+Spectate.start()
 
 player.AttributeChanged:Connect(Hud.refresh)
 ReplicatedStorage.AttributeChanged:Connect(Hud.refresh)
@@ -218,6 +220,13 @@ RunService.Heartbeat:Connect(function(dt)
 	local char = player.Character
 	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	-- 관전 중이면 보고 있는 동료 기준으로 계산
+	local watched = Spectate.subjectRoot()
+	if watched then
+		myRoot = watched
+	elseif hum and hum.Health <= 0 then
+		myRoot = nil
+	end
 	local danger = 0
 	local chasing = false
 	if root and myRoot and root:IsA("BasePart") and myRoot:IsA("BasePart") then
@@ -254,7 +263,7 @@ end)
 local breathRoot: BasePart? = nil
 local breathSound: Sound? = nil
 local growlTimer = 8
-local BREATH_BY_STATE = { Chase = 1, Wander = 0.6, Investigate = 0.7, Search = 0.8, Stalk = 0.35, Stunned = 0.3 }
+local BREATH_BY_STATE = { Chase = 1, Hunt = 0.9, Wander = 0.6, Investigate = 0.7, Search = 0.8, Stalk = 0.35, Stunned = 0.3 }
 RunService.Heartbeat:Connect(function(dt)
 	local monster = Workspace:FindFirstChild("Monster")
 	local root = monster and monster:FindFirstChild("HumanoidRootPart")
@@ -270,7 +279,7 @@ RunService.Heartbeat:Connect(function(dt)
 	growlTimer -= dt
 	if growlTimer <= 0 then
 		growlTimer = math.random(7, 15)
-		if state == "Wander" or state == "Investigate" or state == "Search" or state == "Stalk" then
+		if state == "Wander" or state == "Investigate" or state == "Hunt" or state == "Search" or state == "Stalk" then
 			Audio.play("MonsterGrowl", root, if state == "Stalk" then 0.5 else 1)
 		end
 	end

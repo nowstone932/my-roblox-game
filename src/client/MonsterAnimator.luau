@@ -133,16 +133,20 @@ local function animateRig(model: Model, state: string?, speed: number, dt: numbe
 	local swing = math.sin(phase) * 0.75 * walk
 	local searching = model:GetAttribute("Searching") == true
 
+	-- 오두막에 들어갈 때: 다리를 앞뒤로 쩍 벌리고 납작 엎드려 기어감
+	local crouch = model:GetAttribute("Crouch") == true
 	if leftHip then
-		leftHip.Transform = CFrame.Angles(swing, 0, 0)
+		leftHip.Transform = if crouch then CFrame.Angles(1.3 + swing * 0.25, 0, 0.2) else CFrame.Angles(swing, 0, 0)
 	end
 	if rightHip then
-		rightHip.Transform = CFrame.Angles(-swing, 0, 0)
+		rightHip.Transform = if crouch then CFrame.Angles(-1.3 - swing * 0.25, 0, -0.2) else CFrame.Angles(-swing, 0, 0)
 	end
 
 	if rootJoint then
 		local lean = -0.12
-		if state == "Chase" then
+		if crouch then
+			lean = -0.3
+		elseif state == "Chase" then
 			lean = -0.4
 		elseif searching then
 			lean = -0.55 + math.sin(now * 3) * 0.08
@@ -160,6 +164,8 @@ local function animateRig(model: Model, state: string?, speed: number, dt: numbe
 			local cf
 			if state == "Stunned" then
 				cf = CFrame.Angles(-2.5, 0, side * -0.4) -- 얼굴을 가림
+			elseif crouch and not attacking then
+				cf = CFrame.Angles(-1.1 + swing * side * 0.4, 0, side * -0.25) -- 바닥을 짚으며 기어감
 			elseif attacking then
 				cf = CFrame.Angles(-1.9 + math.sin(now * 30) * 0.3, 0, side * -0.2)
 			elseif state == "Chase" then

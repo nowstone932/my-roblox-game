@@ -229,9 +229,9 @@ function Hud.init(callbacks: Callbacks)
 	storyText = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.48), Size = UDim2.new(0.7, 0, 0, 120), Font = STORY_FONT, TextSize = 22, TextWrapped = true, ZIndex = 16, Parent = storyFrame })
 
 	-- 죽었을 때
-	deadPanel = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.fromOffset(420, 140), BackgroundTransparency = 1, Visible = false, Parent = gui })
+	deadPanel = make("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.12), Size = UDim2.fromOffset(420, 140), BackgroundTransparency = 1, Visible = false, Parent = gui })
 	label({ Size = UDim2.new(1, 0, 0, 50), Text = "숲지기에게 당했다…", Font = STORY_FONT, TextColor3 = Color3.fromRGB(220, 40, 40), TextSize = 34, Parent = deadPanel })
-	label({ Position = UDim2.fromOffset(0, 50), Size = UDim2.new(1, 0, 0, 24), Text = "다음 라운드에 다시 시작합니다", Parent = deadPanel })
+	label({ Position = UDim2.fromOffset(0, 50), Size = UDim2.new(1, 0, 0, 24), Text = "살아있는 동료를 관전합니다 — 모두 끝나면 라운드 종료", Parent = deadPanel })
 	if M.ReviveProductId ~= 0 then
 		local revive = button({ Position = UDim2.fromOffset(110, 90), Size = UDim2.fromOffset(200, 40), BackgroundColor3 = Color3.fromRGB(0, 110, 60), Text = "지금 부활하기 (로벅스)", Modal = true, Parent = deadPanel })
 		revive.Activated:Connect(function()
@@ -421,7 +421,8 @@ function Hud.refresh()
 	hidingLabel.Visible = hiding
 	if hiding then
 		local ends = player:GetAttribute("HideEnds") or os.time()
-		hidingLabel.Text = ("옷장에 숨어 있다… 숨 참기 %d초  (E로 나오기)"):format(math.max(0, ends - os.time()))
+		local where = if player:GetAttribute("HideKind") == "Vehicle" then "차 밑에" else "옷장에"
+		hidingLabel.Text = ("%s 숨어 있다… 숨 참기 %d초  (E로 나오기)"):format(where, math.max(0, ends - os.time()))
 	end
 end
 
@@ -546,7 +547,7 @@ function Hud.showEnding(endingId: string)
 end
 
 function Hud.setDanger(amount: number)
-	dangerFrame.BackgroundTransparency = 1 - math.clamp(amount, 0, 1) * 0.35
+	dangerFrame.BackgroundTransparency = 1 - math.clamp(amount, 0, 1) * Config.Screen.DangerRed
 end
 
 function Hud.flash(color: Color3, startTransparency: number, duration: number)

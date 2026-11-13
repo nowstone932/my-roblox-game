@@ -229,10 +229,13 @@ function Build.closet(parent: Instance, cf: CFrame): (Model, CFrame)
 	return m, hidePoint
 end
 
+-- 오두막 크기 (가로, 높이, 세로). 괴물 AI가 "건물 안/근처"를 알아낼 때 씀
+Build.CabinSize = Vector3.new(20, 14, 16)
+
 -- 오두막: 앞(-Z)에 문이 있음. 내부에 아이템 놓을 자리들을 돌려줍니다.
 function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { [string]: { Vector3 } }, CFrame, CFrame)
 	local m = Build.model(parent, name)
-	local w, d, h = 20, 16, 10
+	local w, d, h = Build.CabinSize.X, Build.CabinSize.Z, 10
 	local wall = Colors.Wood
 	local mat = Enum.Material.WoodPlanks
 	Build.part(m, Vector3.new(w, 1, d), cf * CFrame.new(0, 0.5, 0), Colors.Plank, mat)
@@ -245,13 +248,15 @@ function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { [str
 		Build.part(m, Vector3.new(1, 4, 6), cf * CFrame.new(x, 3, 0), wall, mat)
 		Build.part(m, Vector3.new(1, 2.5, 6), cf * CFrame.new(x, h - 0.25, 0), wall, mat)
 	end
-	-- 앞벽 + 문 구멍
-	local doorW, doorH = 5, 7.5
+	-- 앞벽 + 문 구멍 (괴물이 몸을 숙이고 지나갈 수 있는 크기)
+	local doorW, doorH = 6, 8
 	local sideW = (w - doorW) / 2
 	for _, side in { -1, 1 } do
 		Build.part(m, Vector3.new(sideW, h, 1), cf * CFrame.new(side * (doorW / 2 + sideW / 2), h / 2 + 1, -d / 2), wall, mat)
 	end
 	Build.part(m, Vector3.new(doorW, h - doorH, 1), cf * CFrame.new(0, doorH + 1 + (h - doorH) / 2, -d / 2), wall, mat)
+	-- 문턱 경사로 (괴물과 길찾기가 바닥 턱에 걸리지 않게)
+	Build.part(m, Vector3.new(doorW, 1, 2.5), cf * CFrame.new(0, 0.5, -d / 2 - 1), Colors.Plank, Enum.Material.WoodPlanks, nil, "WedgePart")
 	-- 반쯤 열린 문짝
 	Build.part(m, Vector3.new(0.4, doorH, doorW - 0.4), cf * CFrame.new(-doorW / 2 + 0.2, 1 + doorH / 2, -d / 2 - doorW / 2 + 0.6), Colors.DarkWood, Enum.Material.Wood)
 	-- 지붕 (박공)
@@ -321,7 +326,7 @@ function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { [str
 end
 
 -- 벌목 트럭. 앞 = LookVector
-function Build.truck(parent: Instance, cf: CFrame): Model
+function Build.truck(parent: Instance, cf: CFrame): (Model, Model, CFrame)
 	local m = Build.model(parent, "LoggingTruck")
 	local body = Color3.fromRGB(120, 30, 25)
 	local root = Build.part(m, Vector3.new(7, 1.5, 22), cf * CFrame.new(0, 2.5, 0), Colors.Metal, Enum.Material.DiamondPlate, { Name = "Chassis" })
@@ -363,12 +368,34 @@ function Build.truck(parent: Instance, cf: CFrame): Model
 		end
 	end
 	m.PrimaryPart = root
-	return m
+	-- 트럭 밑 숨는 자리 (앞바퀴와 가운데 바퀴 사이)
+	local hideModel, hidePoint = Build.underVehicleHide(m, cf, 1, -1.5, 0.75, 5.5)
+	return m, hideModel, hidePoint
 end
 
--- 버려진 자동차 껍데기
-function Build.carHulk(parent: Instance, cf: CFrame, color: Color3)
-	Build.part(parent, Vector3.new(6, 2.5, 12), cf * CFrame.new(0, 1.8, 0), color, Enum.Material.CorrodedMetal)
+-- 차 밑 숨는 자리. cf = 차의 CFrame, side = 1(오른쪽)/-1(왼쪽), z = 차 길이 방향 위치
+-- 엎드려서 바깥쪽을 내다보는 자세로 숨습니다. (Hiding.luau 가 사용)
+function Build.underVehicleHide(parent: Instance, cf: CFrame, side: number, z: number, lieHeight: number, promptOut: number): (Model, CFrame)
+	local m = Build.model(parent, "HideUnder")
+	local outward = cf:VectorToWorldSpace(Vector3.new(side, 0, 0))
+	local base = (cf * CFrame.new(side * 0.6, lieHeight, z)).Position
+	-- 엎드림: 머리 = 바깥쪽, 얼굴 = 땅
+	local hidePoint = CFrame.lookAt(base, base + outward) * CFrame.Angles(math.rad(-90), 0, 0)
+	local promptPos = (cf * CFrame.new(side * promptOut, 3.5, z)).Position
+	-- 프롬프트 파트의 앞(-Z)이 차 바깥쪽을 보게 → 나올 때 차 옆으로 나옴
+	local promptPart = Build.part(m, Vector3.new(1, 1, 1), CFrame.lookAt(promptPos, promptPos + outward), Colors.Metal, nil, {
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = false,
+		Name = "PromptPart",
+	})
+	m.PrimaryPart = promptPart
+	return m, hidePoint
+end
+
+-- 버려진 자동차 껍데기 (차체를 살짝 띄워서 밑에 숨을 수 있음). 숨는 자리를 돌려줍니다.
+function Build.carHulk(parent: Instance, cf: CFrame, color: Color3): (Model, CFrame)
+	Build.part(parent, Vector3.new(6, 1.4, 12), cf * CFrame.new(0, 2.35, 0), color, Enum.Material.CorrodedMetal)
 	Build.part(parent, Vector3.new(5.6, 2.2, 6), cf * CFrame.new(0, 4.1, 1), color:Lerp(Color3.new(0, 0, 0), 0.3), Enum.Material.CorrodedMetal)
 	for _, x in { -3, 3 } do
 		for _, z in { -4, 4 } do
@@ -377,6 +404,7 @@ function Build.carHulk(parent: Instance, cf: CFrame, color: Color3)
 			})
 		end
 	end
+	return Build.underVehicleHide(parent, cf, 1, 0, 0.7, 4.5)
 end
 
 -- 나무 울타리 한 칸

@@ -47,8 +47,11 @@ local function escape(player: Player, route: string)
 	end
 end
 
-local function aliveInRound(player: Player): BasePart?
+local function aliveInRound(player: Player, allowDowned: boolean?): BasePart?
 	if player:GetAttribute("InRound") ~= true or player:GetAttribute("Escaped") == true then
+		return nil
+	end
+	if not allowDowned and player:GetAttribute("Downed") == true then
 		return nil
 	end
 	local char = player.Character
@@ -421,7 +424,7 @@ end
 function Objectives.onSealed()
 	set("MonsterSealed", true)
 	for _, player in Players:GetPlayers() do
-		if aliveInRound(player) then
+		if aliveInRound(player, true) then
 			escape(player, "Seal")
 		end
 	end

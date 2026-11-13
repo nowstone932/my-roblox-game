@@ -5,6 +5,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Assets = require(ReplicatedStorage.Shared.Assets)
 local Items = require(ReplicatedStorage.Shared.Items)
 local Inventory = require(script.Parent.Inventory)
 
@@ -93,6 +94,16 @@ local builders: { [string]: (Tool, BasePart) -> () } = {
 	end,
 }
 
+-- 직접 만든 도구 모델의 자동 크기 (가장 긴 변, 스터드)
+local ASSET_SIZES = {
+	FlareGun = 2,
+	Axe = 3.5,
+	Flashbang = 1.1,
+	Trap = 2,
+	Medkit = 1.3,
+	SealStake = 3.8,
+}
+
 local function displayName(itemId: string, count: number): string
 	local def = Items.defs[itemId]
 	if def.stack then
@@ -118,9 +129,32 @@ local function createTool(itemId: string, count: number): Tool
 	handle.CFrame = CFrame.new()
 	handle.Parent = tool
 
-	local builder = builders[itemId]
-	if builder then
-		builder(tool, handle)
+	-- ReplicatedStorage.Assets.Tools 에 직접 만든 모델이 있으면 그걸 붙임
+	local asset = Assets.clone("Tools", itemId, ASSET_SIZES[itemId])
+	if asset then
+		handle.Size = Vector3.new(0.4, 0.4, 0.4)
+		handle.Transparency = 1
+		-- 모델의 가운데가 손잡이 위치에 오도록 이동 (방향은 그대로: 앞 = -Z)
+		local center = asset:GetBoundingBox().Position
+		asset:PivotTo(asset:GetPivot() - center + handle.Position)
+		for _, d in asset:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = false
+				d.CanCollide = false
+				d.Massless = true
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = handle
+				weld.Part1 = d
+				weld.Parent = d
+			end
+		end
+		asset.Parent = tool
+		tool.Grip = CFrame.new()
+	else
+		local builder = builders[itemId]
+		if builder then
+			builder(tool, handle)
+		end
 	end
 	return tool
 end

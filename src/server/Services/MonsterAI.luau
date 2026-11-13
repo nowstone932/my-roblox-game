@@ -5,6 +5,8 @@
 --   Wander      배회 (가끔 플레이어 근처로 슬금슬금 옴)
 --   Investigate 소리(총소리, 트럭 시동, 무전)가 난 곳을 조사하러 감
 --   Chase       플레이어를 보고 추격
+--   Stalk       멀리서 가만히 서서 지켜봄 → 갑자기 돌진하거나, 사라졌다가 등 뒤 어딘가에 나타남
+--   Search      옷장에 숨는 걸 봤으면 옷장 앞에서 냄새를 맡음 → 확률적으로 문을 열어젖힘
 --   Stunned     섬광탄/덫에 걸려 잠시 멈춤
 --   Downed      체력이 0이 되어 쓰러짐 → 일정 시간 뒤 다시 일어남 (이때 봉인 말뚝 가능)
 --   Sealed      봉인됨 (영구 퇴치)
@@ -15,6 +17,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Assets = require(ReplicatedStorage.Shared.Assets)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
@@ -24,8 +27,10 @@ local C = Config.Monster
 
 local MonsterAI = {}
 
--- 봉인되면 GameLoop가 등록한 함수가 불립니다.
-MonsterAI.onSealed = nil :: (() -> ())?
+-- 다른 모듈이 등록하는 콜백
+MonsterAI.onSealed = nil :: (() -> ())? -- 봉인됨 (GameLoop)
+MonsterAI.onPlayerDowned = nil :: ((Player) -> ())? -- 플레이어 치명상 → 쓰러짐 (GameLoop)
+MonsterAI.onClosetRipped = nil :: ((Player) -> ())? -- 옷장을 열어젖힘 (Hiding)
 
 local map = nil
 local running = false
@@ -57,6 +62,17 @@ local lastPathTime = 0
 local lastPathGoal: Vector3? = nil
 
 local traps: { BasePart } = {}
+
+-- 공포 연출용 상태
+local lastTargetTime = 0 -- 마지막으로 누군가를 쫓은 시각 (기습 순간이동 판단)
+local lastStalk = -999
+local stalkUntil = 0
+local stalkTarget: Player? = nil
+local lastLunge = 0
+local lungeUntil = 0
+local searchPos: Vector3? = nil
+local searchTarget: Player? = nil
+local searchArrived: number? = nil
 
 local rng = Random.new()
 
@@ -207,6 +223,9 @@ local function aliveCharacter(player: Player): (Model?, BasePart?)
 	if player:GetAttribute("InRound") ~= true or player:GetAttribute("Escaped") == true or player:GetAttribute("Hiding") == true then
 		return nil, nil
 	end
+	if player:GetAttribute("Downed") == true then
+		return nil, nil
+	end
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -312,10 +331,20 @@ local function tryAttack()
 				lastAttack = os.clock()
 				local hum = char:FindFirstChildOfClass("Humanoid")
 				if hum then
-					hum:TakeDamage(C.AttackDamage)
-					effect:FireClient(player, "Hurt")
 					if model then
 						model:SetAttribute("AttackAt", os.clock())
+					end
+					local head = model and model:FindFirstChild("Head")
+					local facePos = if head and head:IsA("BasePart") then head.Position else root.Position + Vector3.new(0, 5, 0)
+					effect:FireClient(player, "Hurt", facePos)
+					if hum.Health - C.AttackDamage <= 0 and MonsterAI.onPlayerDowned then
+						-- 바로 죽지 않고 쓰러짐. 괴물은 다른 먹잇감을 찾아 떠남
+						MonsterAI.onPlayerDowned(player)
+						target = nil
+						setState("Wander")
+						wanderGoal = nil
+					else
+						hum:TakeDamage(C.AttackDamage)
 					end
 				end
 				return
@@ -389,6 +418,102 @@ local function revive()
 	notify:FireAllClients("숲지기가 다시 일어났다…!")
 end
 
+-- 모든 플레이어에게서 안 보이는지 (머리 → 지점 레이가 막히면 안 보임)
+local function hiddenFromEveryone(pos: Vector3): boolean
+	for _, player in Players:GetPlayers() do
+		local char, hrp = aliveCharacter(player)
+		if char and hrp then
+			local head = char:FindFirstChild("Head")
+			local from = if head and head:IsA("BasePart") then head.Position else hrp.Position
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.FilterDescendantsInstances = { char, model :: Instance }
+			local dir = (pos + Vector3.new(0, 6, 0)) - from
+			if dir.Magnitude < 25 or not Workspace:Raycast(from, dir, params) then
+				return false
+			end
+		end
+	end
+	return true
+end
+
+local function groundAt(pos: Vector3): Vector3?
+	local result = Workspace:Raycast(Vector3.new(pos.X, 80, pos.Z), Vector3.new(0, -100, 0))
+	if result and result.Position.Y < 2 and math.abs(pos.X) < map.HalfSize - 15 and math.abs(pos.Z) < map.HalfSize - 15 then
+		return result.Position
+	end
+	return nil
+end
+
+local function teleportTo(pos: Vector3)
+	if not (model and root) then
+		return
+	end
+	model:PivotTo(CFrame.new(pos + Vector3.new(0, 9, 0)))
+	waypoints = {}
+	lastPathGoal = nil
+end
+
+-- 플레이어 등 뒤, 시야 밖 어딘가로 순간이동
+local function ambush(): boolean
+	local candidates = {}
+	for _, player in Players:GetPlayers() do
+		local _, hrp = aliveCharacter(player)
+		if hrp then
+			table.insert(candidates, { player = player, hrp = hrp })
+		end
+	end
+	if #candidates == 0 then
+		return false
+	end
+	local pick = candidates[rng:NextInteger(1, #candidates)]
+	local look = pick.hrp.CFrame.LookVector
+	look = Vector3.new(look.X, 0, look.Z)
+	look = if look.Magnitude > 0.1 then look.Unit else Vector3.new(0, 0, -1)
+	for _ = 1, 10 do
+		local dist = rng:NextNumber(C.AmbushDistance[1], C.AmbushDistance[2])
+		local angle = rng:NextNumber(-0.9, 0.9)
+		local dir = (CFrame.Angles(0, angle, 0) * -look)
+		local ground = groundAt(pick.hrp.Position + dir * dist)
+		if ground and hiddenFromEveryone(ground) then
+			teleportTo(ground)
+			investigatePos = pick.hrp.Position
+			investigateStart = os.clock()
+			setState("Investigate")
+			return true
+		end
+	end
+	return false
+end
+
+-- 연기처럼 사라졌다가 먼 곳에 나타남
+local function vanish()
+	if not root then
+		return
+	end
+	effect:FireAllClients("Vanish", root.Position)
+	for _ = 1, 15 do
+		local half = map.HalfSize - 40
+		local ground = groundAt(Vector3.new(rng:NextNumber(-half, half), 0, rng:NextNumber(-half, half)))
+		if ground and hiddenFromEveryone(ground) then
+			teleportTo(ground)
+			break
+		end
+	end
+	wanderGoal = nil
+	setState("Wander")
+	lastTargetTime = os.clock() - C.AmbushAfter * 0.5 -- 잠시 뒤 다시 기습하러 옴
+end
+
+local function faceTowards(pos: Vector3)
+	if root then
+		local flat = Vector3.new(pos.X, root.Position.Y, pos.Z)
+		if (flat - root.Position).Magnitude > 0.5 then
+			root.CFrame = CFrame.lookAt(root.Position, flat)
+		end
+	end
+end
+
 ---------------------------------------------------------------------------
 -- 매 0.2초마다 실행
 ---------------------------------------------------------------------------
@@ -415,12 +540,89 @@ local function update()
 	end
 
 	checkTraps()
+	model:SetAttribute("Searching", false)
+
+	-- 옷장 뒤지기
+	if state == "Search" and searchPos then
+		if not searchArrived then
+			humanoid.WalkSpeed = chaseSpeed()
+			moveTo(searchPos)
+			if (Vector3.new(searchPos.X, root.Position.Y, searchPos.Z) - root.Position).Magnitude < 7 then
+				searchArrived = now
+			end
+			if now - investigateStart > 15 then
+				setState("Wander")
+			end
+		else
+			humanoid.WalkSpeed = 0
+			humanoid:MoveTo(root.Position)
+			faceTowards(searchPos)
+			model:SetAttribute("Searching", true)
+			if now - searchArrived > 3.5 then
+				local victim = searchTarget
+				searchArrived = nil
+				searchPos = nil
+				searchTarget = nil
+				if victim and victim:GetAttribute("Hiding") == true and rng:NextNumber() < C.ClosetSearchChance and MonsterAI.onClosetRipped then
+					MonsterAI.onClosetRipped(victim)
+					effect:FireAllClients("Scream", root.Position)
+				else
+					wanderGoal = nil
+					setState("Wander")
+				end
+			end
+		end
+		return
+	end
+
+	-- 지켜보기
+	if state == "Stalk" then
+		humanoid.WalkSpeed = 0
+		humanoid:MoveTo(root.Position)
+		local hrp: BasePart? = nil
+		if stalkTarget then
+			local _, found = aliveCharacter(stalkTarget)
+			hrp = found
+		end
+		if not hrp then
+			vanish()
+			return
+		end
+		faceTowards(hrp.Position)
+		local dist = (hrp.Position - root.Position).Magnitude
+		if now > stalkUntil or dist < 22 then
+			if rng:NextNumber() < 0.5 then
+				target = stalkTarget
+				lastSeenPos = hrp.Position
+				lastSeenTime = now
+				setState("Chase")
+				lungeUntil = now + C.LungeTime
+				lastLunge = now
+			else
+				vanish()
+			end
+		end
+		return
+	end
 
 	local player, hrp = findTarget()
 	if player and hrp then
+		local dist = (hrp.Position - root.Position).Magnitude
+		local canStalk = (state == "Wander" or state == "Investigate")
+			and dist > C.StalkMinDistance
+			and now - lastStalk > C.StalkCooldown
+			and rng:NextNumber() < C.StalkChance
+		if canStalk then
+			stalkTarget = player
+			stalkUntil = now + rng:NextNumber(C.StalkTime[1], C.StalkTime[2])
+			lastStalk = now
+			setState("Stalk")
+			return
+		end
 		target = player
 		lastSeenPos = hrp.Position
 		lastSeenTime = now
+		lastTargetTime = now
 		setState("Chase")
 	elseif state == "Chase" and now - lastSeenTime > C.LoseSightTime then
 		target = nil
@@ -429,8 +631,24 @@ local function update()
 	end
 
 	if state == "Chase" and lastSeenPos then
-		humanoid.WalkSpeed = chaseSpeed()
-		moveTo(lastSeenPos)
+		lastTargetTime = now
+		-- 돌진
+		local dist = (lastSeenPos - root.Position).Magnitude
+		if dist > 12 and dist < 30 and now - lastLunge > C.LungeCooldown and rng:NextNumber() < 0.3 then
+			lastLunge = now
+			lungeUntil = now + C.LungeTime
+			effect:FireAllClients("Scream", root.Position)
+		end
+		local speed = chaseSpeed()
+		if now < lungeUntil then
+			speed *= C.LungeSpeedMultiplier
+		elseif math.sin(now * 1.7) > 0.85 then
+			speed *= 0.6 -- 가끔 멈칫하며 고개를 꺾음 (단조롭지 않게)
+		end
+		humanoid.WalkSpeed = speed
+		-- 정면으로만 오지 않고 살짝 옆으로 돌아 들어옴
+		local side = Vector3.new(math.sin(now * 0.6), 0, math.cos(now * 0.6)) * math.min(dist * 0.15, 6)
+		moveTo(lastSeenPos + (if dist > 15 then side else Vector3.zero))
 	elseif state == "Investigate" and investigatePos then
 		humanoid.WalkSpeed = chaseSpeed() * 0.85
 		moveTo(investigatePos)
@@ -439,6 +657,13 @@ local function update()
 			setState("Wander")
 		end
 	else
+		-- 오래 아무도 못 찾았으면 기습
+		if now - lastTargetTime > C.AmbushAfter then
+			lastTargetTime = now
+			if ambush() then
+				return
+			end
+		end
 		humanoid.WalkSpeed = C.WanderSpeed + rage * 0.5
 		local reached = wanderGoal ~= nil and (wanderGoal - root.Position).Magnitude < 10
 		if wanderGoal == nil or reached or now - wanderStarted > 20 then
@@ -450,9 +675,54 @@ local function update()
 	tryAttack()
 end
 
+-- ReplicatedStorage.Assets.Monster 가 있으면 그 모델을 사용
+local function buildFromAsset(position: Vector3): Model?
+	local m = Assets.clone("Monster", "Monster", 15)
+	if not m then
+		return nil
+	end
+	local hrp = m:FindFirstChild("HumanoidRootPart")
+	local hum = m:FindFirstChildOfClass("Humanoid")
+	if not (hrp and hrp:IsA("BasePart") and hum) then
+		warn("[MonsterAI] Assets.Monster 에 HumanoidRootPart 와 Humanoid 가 필요해요. 기본 괴물을 사용합니다.")
+		m:Destroy()
+		return nil
+	end
+	m.Name = "Monster"
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+			d.CanCollide = d == hrp
+			d.Massless = d ~= hrp
+			if d.Name:lower():find("eye") then
+				table.insert(eyes, d)
+			end
+		end
+	end
+	hrp.Transparency = 1
+	m.PrimaryPart = hrp
+	-- 다리 길이(HipHeight) 자동 계산
+	local cf, size = m:GetBoundingBox()
+	local bottom = cf.Position.Y - size.Y / 2
+	hum.HipHeight = math.max(0.1, (hrp.Position.Y - hrp.Size.Y / 2) - bottom)
+	hum.RequiresNeck = false
+	hum.MaxHealth = math.huge
+	hum.Health = math.huge
+	hum.WalkSpeed = C.WanderSpeed
+	hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+	hum.BreakJointsOnDeath = false
+	m:SetAttribute("State", "Wander")
+	m:SetAttribute("IsAsset", true)
+	m:PivotTo(CFrame.new(position + Vector3.new(0, size.Y / 2 + 2, 0)))
+	m.Parent = Workspace
+	hrp:SetNetworkOwner(nil)
+	return m
+end
+
 local function spawnMonster()
 	eyes = {}
-	model = buildModel(map.MonsterSpawn)
+	model = buildFromAsset(map.MonsterSpawn) or buildModel(map.MonsterSpawn)
 	humanoid = (model :: Model):FindFirstChildOfClass("Humanoid")
 	root = (model :: Model).PrimaryPart
 	hp = C.MaxHealth
@@ -463,6 +733,10 @@ local function spawnMonster()
 	investigatePos = nil
 	waypoints = {}
 	traps = {}
+	lastTargetTime = os.clock()
+	lastStalk = os.clock() - C.StalkCooldown + 15
+	stalkTarget = nil
+	searchPos, searchTarget, searchArrived = nil, nil, nil
 end
 
 ---------------------------------------------------------------------------
@@ -553,7 +827,7 @@ end
 
 -- 소리가 나면 조사하러 옴 (추격 중이면 무시)
 function MonsterAI.noise(position: Vector3, range: number)
-	if not root or state == "Chase" or state == "Stunned" or state == "Downed" or state == "Sealed" then
+	if not root or state == "Chase" or state == "Stunned" or state == "Downed" or state == "Sealed" or state == "Search" then
 		return
 	end
 	if (position - root.Position).Magnitude <= range then
@@ -566,6 +840,21 @@ end
 -- 탈출 진행도가 오를수록 빨라짐
 function MonsterAI.setRage(level: number)
 	rage = level
+end
+
+-- 플레이어가 옷장에 숨었을 때 Hiding이 부름. 쫓던 중이었다면 옷장을 뒤지러 옴
+function MonsterAI.notifyHide(player: Player, closetFront: Vector3)
+	if not root or state ~= "Chase" or target ~= player then
+		return
+	end
+	if (closetFront - root.Position).Magnitude > 45 then
+		return
+	end
+	searchPos = closetFront
+	searchTarget = player
+	searchArrived = nil
+	investigateStart = os.clock()
+	setState("Search")
 end
 
 function MonsterAI.addTrap(trap: BasePart)

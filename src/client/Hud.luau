@@ -36,6 +36,9 @@ local dangerFrame: Frame
 local flashFrame: Frame
 local deadPanel: Frame
 local staminaBar: Frame
+local downedPanel: Frame
+local downedText: TextLabel
+local whisperLabel: TextLabel
 
 local FONT = Enum.Font.GothamMedium
 local STORY_FONT = Enum.Font.SpecialElite
@@ -122,7 +125,7 @@ function Hud.init(callbacks: Callbacks)
 	staminaBar = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(200, 200, 160), BorderSizePixel = 0, Parent = staminaBack })
 
 	-- 목표 패널
-	local objFrame = make("Frame", { Position = UDim2.fromOffset(16, 60), Size = UDim2.fromOffset(300, 150), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55, Parent = gui })
+	local objFrame = make("Frame", { Position = UDim2.fromOffset(16, 60), Size = UDim2.fromOffset(320, 178), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55, Parent = gui })
 	corner(objFrame, 8)
 	make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingTop = UDim.new(0, 8), Parent = objFrame })
 	objectivesLabel = label({ Size = UDim2.new(1, -10, 1, -8), TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextSize = 15, RichText = true, Parent = objFrame })
@@ -235,6 +238,30 @@ function Hud.init(callbacks: Callbacks)
 		end)
 	end
 
+	-- 쓰러졌을 때
+	downedPanel = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.35), Size = UDim2.fromOffset(460, 150), BackgroundTransparency = 1, Visible = false, Parent = gui })
+	label({ Size = UDim2.new(1, 0, 0, 46), Text = "쓰러졌다!", Font = STORY_FONT, TextColor3 = Color3.fromRGB(230, 50, 40), TextSize = 36, Parent = downedPanel })
+	downedText = label({ Position = UDim2.fromOffset(0, 48), Size = UDim2.new(1, 0, 0, 26), Text = "", Parent = downedPanel })
+	if M.ReviveProductId ~= 0 then
+		local selfRevive = button({ Position = UDim2.fromOffset(130, 90), Size = UDim2.fromOffset(200, 40), BackgroundColor3 = Color3.fromRGB(0, 110, 60), Text = "스스로 일어나기 (로벅스)", Modal = true, Parent = downedPanel })
+		selfRevive.Activated:Connect(function()
+			callbacks.buyProduct(M.ReviveProductId)
+		end)
+	end
+
+	-- 환청 글씨
+	whisperLabel = label({
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.7),
+		Size = UDim2.new(0.8, 0, 0, 40),
+		Font = STORY_FONT,
+		TextSize = 26,
+		TextColor3 = Color3.fromRGB(200, 190, 210),
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+		Parent = gui,
+	})
+
 	gui.Parent = player:WaitForChild("PlayerGui")
 	Hud.refresh()
 end
@@ -291,6 +318,7 @@ local function objectivesText(): string
 	else
 		table.insert(lines, ("봉인: 룬 조각 %d/%d → 봉인 말뚝 제작"):format(count("Rune"), Config.Escape.RunesRequired))
 	end
+	table.insert(lines, ('<font color="#AAAAAA">실종자 인식표 %d/%d</font>'):format(count("DogTag"), #Story.Loggers))
 	return table.concat(lines, "\n")
 end
 
@@ -366,6 +394,13 @@ function Hud.refresh()
 	refreshBag()
 	refreshCraft()
 
+	local downed = player:GetAttribute("Downed") == true
+	downedPanel.Visible = downed
+	if downed then
+		local ends = player:GetAttribute("BleedEnds") or os.time()
+		downedText.Text = ("동료가 와서 살려줘야 한다… %d초"):format(math.max(0, ends - os.time()))
+	end
+
 	local hiding = player:GetAttribute("Hiding") == true
 	hidingLabel.Visible = hiding
 	if hiding then
@@ -413,7 +448,29 @@ function Hud.setCraftOpen(open: boolean)
 	end
 end
 
+function Hud.whisper(text: string)
+	whisperLabel.Text = text
+	whisperLabel.TextTransparency = 1
+	TweenService:Create(whisperLabel, TweenInfo.new(1.2), { TextTransparency = 0.1 }):Play()
+	task.delay(3, function()
+		if whisperLabel.Text == text then
+			TweenService:Create(whisperLabel, TweenInfo.new(2), { TextTransparency = 1 }):Play()
+		end
+	end)
+end
+
 function Hud.showNote(noteId: string)
+	local loggerIndex = tonumber(noteId:match("^Logger(%d+)$"))
+	if loggerIndex then
+		local logger = Story.Loggers[loggerIndex]
+		if logger then
+			noteTitle.Text = "인식표 — " .. logger.name
+			noteBody.Text = ("인식표 뒷면에 칼로 긁어 쓴 글씨:\n\n\"%s\""):format(logger.words)
+			craftPanel.Visible = false
+			notePanel.Visible = true
+		end
+		return
+	end
 	for _, note in Story.Notes do
 		if note.id == noteId then
 			noteTitle.Text = note.title

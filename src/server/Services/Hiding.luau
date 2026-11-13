@@ -52,7 +52,7 @@ local function hide(player: Player, closet: ClosetState)
 	if not (char and hum and hum.Health > 0 and hrp and hrp:IsA("BasePart")) then
 		return
 	end
-	if player:GetAttribute("InRound") ~= true then
+	if player:GetAttribute("InRound") ~= true or player:GetAttribute("Downed") == true then
 		return
 	end
 	if MonsterAI.distanceTo(hrp.Position) < H.BlockedRange then
@@ -69,6 +69,9 @@ local function hide(player: Player, closet: ClosetState)
 	player:SetAttribute("Hiding", true)
 	player:SetAttribute("HideEnds", os.time() + H.MaxTime)
 
+	-- 쫓기던 중이었다면 괴물이 옷장을 뒤지러 옴
+	MonsterAI.notifyHide(player, exitPoint(closet).Position)
+
 	local myToken = closet.token
 	task.delay(H.MaxTime, function()
 		if closet.token == myToken and closet.occupant == player then
@@ -78,6 +81,21 @@ local function hide(player: Player, closet: ClosetState)
 end
 
 function Hiding.init(mapInfo)
+	-- 괴물이 옷장 문을 뜯어냈을 때
+	MonsterAI.onClosetRipped = function(player: Player)
+		Hiding.release(player, "숲지기가 옷장 문을 뜯어냈다!")
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			Remotes.get("Effect"):FireClient(player, "Hurt", nil)
+			if hum.Health - Config.Monster.ClosetSearchDamage <= 0 and MonsterAI.onPlayerDowned then
+				MonsterAI.onPlayerDowned(player)
+			else
+				hum:TakeDamage(Config.Monster.ClosetSearchDamage)
+			end
+		end
+	end
+
 	for _, entry in mapInfo.Closets do
 		local promptPart = entry.model.PrimaryPart
 		local prompt = Instance.new("ProximityPrompt")

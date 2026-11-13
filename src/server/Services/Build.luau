@@ -230,7 +230,7 @@ function Build.closet(parent: Instance, cf: CFrame): (Model, CFrame)
 end
 
 -- 오두막: 앞(-Z)에 문이 있음. 내부에 아이템 놓을 자리들을 돌려줍니다.
-function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { Vector3 }, CFrame, CFrame)
+function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { [string]: { Vector3 } }, CFrame, CFrame)
 	local m = Build.model(parent, name)
 	local w, d, h = 20, 16, 10
 	local wall = Colors.Wood
@@ -294,11 +294,28 @@ function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { Vect
 	Build.light(lamp, Color3.fromRGB(255, 140, 60), 16, 1, true)
 
 	local closetCf = cf * CFrame.new(5, 1, -4) * CFrame.Angles(0, math.rad(90), 0) -- 문이 방 안쪽을 보게
+
+	-- 뒷벽 열쇠걸이 + 작은 선반
+	local board = Build.part(m, Vector3.new(2.4, 1.2, 0.2), cf * CFrame.new(-1, 6.2, d / 2 - 0.6), Colors.Plank, Enum.Material.Wood)
+	Build.text(board, Enum.NormalId.Front, "열쇠", Color3.fromRGB(60, 40, 30))
+	Build.part(m, Vector3.new(2.4, 0.15, 0.8), cf * CFrame.new(-1, 5.2, d / 2 - 0.9), Colors.DarkWood, Enum.Material.Wood)
+	for _, x in { -1.8, -1, -0.2 } do
+		Build.part(m, Vector3.new(0.1, 0.1, 0.4), cf * CFrame.new(x, 5.9, d / 2 - 0.8), Color3.fromRGB(150, 150, 150), Enum.Material.Metal)
+	end
+
+	-- 바깥 앞벽의 전기함
+	local fuseSpot = Build.fuseBox(m, cf * CFrame.new(-7, 4.5, -d / 2 - 0.5))
+
+	-- 장소 이름별 아이템 자리 (높이 = 그 표면 위)
+	local function P(x: number, y: number, z: number): Vector3
+		return (cf * CFrame.new(x, y, z)).Position
+	end
 	local spots = {
-		(cf * CFrame.new(-4, 4.8, 4)).Position, -- 탁자 위
-		(cf * CFrame.new(7, 3, 5)).Position, -- 침대 위
-		(cf * CFrame.new(-7, 4, -5)).Position, -- 상자 위
-		(cf * CFrame.new(0, 1.6, 5)).Position, -- 바닥
+		CabinTable = { P(-5.5, 4.25, 3), P(-2.5, 4.25, 4) },
+		Bed = { P(7, 2.5, 5), P(7, 2.5, 1) },
+		CabinFloor = { P(-7, 3.5, -5), P(1, 1, 5.5), P(-3, 1, -4) },
+		KeyHook = { P(-1, 5.28, d / 2 - 0.9) },
+		FuseBox = { fuseSpot },
 	}
 	return m, spots, closetCf, cf * CFrame.new(0, 1, -d / 2 - 3)
 end
@@ -384,6 +401,125 @@ function Build.road(parent: Instance, from: Vector3, to: Vector3, width: number)
 		CanCollide = false,
 		CanQuery = false,
 	})
+end
+
+-- 벽에 붙은 전기함 (문이 열려 있음). cf의 앞(-Z)이 바깥쪽. 안쪽 바닥 위치를 돌려줌
+function Build.fuseBox(parent: Instance, cf: CFrame): Vector3
+	local grey = Color3.fromRGB(95, 100, 95)
+	local w, h, d = 2.2, 2.4, 1.1
+	Build.part(parent, Vector3.new(w, h, 0.1), cf * CFrame.new(0, 0, 0.05), grey, Enum.Material.Metal)
+	Build.part(parent, Vector3.new(0.1, h, d), cf * CFrame.new(-w / 2, 0, -d / 2), grey, Enum.Material.Metal)
+	Build.part(parent, Vector3.new(0.1, h, d), cf * CFrame.new(w / 2, 0, -d / 2), grey, Enum.Material.Metal)
+	Build.part(parent, Vector3.new(w, 0.1, d), cf * CFrame.new(0, h / 2, -d / 2), grey, Enum.Material.Metal)
+	Build.part(parent, Vector3.new(w, 0.1, d), cf * CFrame.new(0, -h / 2, -d / 2), grey, Enum.Material.Metal)
+	-- 열린 문짝 (경고 표시)
+	local door = Build.part(parent, Vector3.new(w, h, 0.08), cf * CFrame.new(-w / 2, 0, -d) * CFrame.Angles(0, math.rad(-110), 0) * CFrame.new(w / 2, 0, 0), grey, Enum.Material.Metal)
+	Build.text(door, Enum.NormalId.Front, "⚡ 위험", Color3.fromRGB(230, 200, 40))
+	Build.text(door, Enum.NormalId.Back, "⚡ 위험", Color3.fromRGB(230, 200, 40))
+	-- 안쪽 배선
+	for i = -1, 1 do
+		Build.part(parent, Vector3.new(0.08, h - 0.3, 0.08), cf * CFrame.new(i * 0.5, 0.1, -0.15), Color3.fromRGB(150 + i * 50, 40, 40), Enum.Material.Plastic)
+	end
+	return (cf * CFrame.new(0, -h / 2 + 0.05, -d / 2)).Position
+end
+
+-- 철제 선반 3단. 각 칸의 위치들을 돌려줌
+function Build.shelf(parent: Instance, cf: CFrame): { Vector3 }
+	local grey = Color3.fromRGB(80, 82, 85)
+	local spots = {}
+	for _, x in { -2.4, 2.4 } do
+		for _, z in { -0.9, 0.9 } do
+			Build.part(parent, Vector3.new(0.2, 7, 0.2), cf * CFrame.new(x, 3.5, z), grey, Enum.Material.Metal)
+		end
+	end
+	for i, y in { 0.8, 3, 5.2 } do
+		Build.part(parent, Vector3.new(5, 0.15, 2), cf * CFrame.new(0, y, 0), grey, Enum.Material.DiamondPlate)
+		table.insert(spots, (cf * CFrame.new(-1.2, y + 0.08, 0)).Position)
+		table.insert(spots, (cf * CFrame.new(1.2, y + 0.08, 0)).Position)
+		-- 잡동사니
+		if i ~= 2 then
+			Build.part(parent, Vector3.new(0.6, 0.8, 0.6), cf * CFrame.new(2, y + 0.48, -0.4), Color3.fromRGB(120, 110, 90), Enum.Material.Cardboard)
+		end
+	end
+	return spots
+end
+
+-- 화약 상자 (뚜껑 열림). 위 표면 위치를 돌려줌
+function Build.explosivesCrate(parent: Instance, cf: CFrame): Vector3
+	local box = Build.part(parent, Vector3.new(3.2, 2, 2.2), cf * CFrame.new(0, 1, 0), Color3.fromRGB(100, 75, 45), Enum.Material.WoodPlanks)
+	Build.text(box, Enum.NormalId.Front, "화약 위험", Color3.fromRGB(180, 30, 20))
+	Build.text(box, Enum.NormalId.Back, "화약 위험", Color3.fromRGB(180, 30, 20))
+	Build.part(parent, Vector3.new(3.2, 0.2, 2.2), cf * CFrame.new(0, 2.6, 1.6) * CFrame.Angles(math.rad(-70), 0, 0), Color3.fromRGB(90, 65, 40), Enum.Material.WoodPlanks)
+	return (cf * CFrame.new(0, 2, 0)).Position
+end
+
+-- 작업대 (공구가 널려 있음)
+function Build.workbench(parent: Instance, cf: CFrame): { Vector3 }
+	Build.part(parent, Vector3.new(6, 0.4, 2.6), cf * CFrame.new(0, 3, 0), Colors.Plank, Enum.Material.Wood)
+	for _, x in { -2.7, 2.7 } do
+		for _, z in { -1.1, 1.1 } do
+			Build.part(parent, Vector3.new(0.3, 3, 0.3), cf * CFrame.new(x, 1.5, z), Colors.DarkWood, Enum.Material.Wood)
+		end
+	end
+	Build.part(parent, Vector3.new(0.8, 0.2, 0.2), cf * CFrame.new(1.8, 3.3, 0.5) * CFrame.Angles(0, 0.5, 0), Color3.fromRGB(150, 30, 30), Enum.Material.Plastic) -- 망치 손잡이
+	Build.part(parent, Vector3.new(0.25, 0.25, 0.5), cf * CFrame.new(2.2, 3.35, 0.7) * CFrame.Angles(0, 0.5, 0), Color3.fromRGB(120, 120, 125), Enum.Material.Metal)
+	return { (cf * CFrame.new(-1.5, 3.2, 0)).Position, (cf * CFrame.new(0.5, 3.2, -0.5)).Position }
+end
+
+-- 빨랫줄 + 바구니. 바구니/바닥 위치를 돌려줌
+function Build.clothesline(parent: Instance, cf: CFrame): { Vector3 }
+	for _, x in { -6, 6 } do
+		Build.part(parent, Vector3.new(0.4, 7, 0.4), cf * CFrame.new(x, 3.5, 0), Colors.Bark, Enum.Material.Wood)
+	end
+	Build.part(parent, Vector3.new(12, 0.05, 0.05), cf * CFrame.new(0, 6.6, 0), Color3.fromRGB(200, 200, 190), Enum.Material.Fabric)
+	local colors = { Color3.fromRGB(150, 140, 120), Color3.fromRGB(110, 50, 45), Color3.fromRGB(70, 80, 100) }
+	for i = -2, 2 do
+		Build.part(parent, Vector3.new(1.6, 2.4, 0.05), cf * CFrame.new(i * 2.2, 5.4, 0) * CFrame.Angles(0, 0, math.rad(i * 3)), colors[(i % 3) + 1], Enum.Material.Fabric, { CanCollide = false })
+	end
+	Build.part(parent, Vector3.new(2.2, 1.2, 1.6), cf * CFrame.new(3, 0.6, 2), Color3.fromRGB(140, 110, 70), Enum.Material.Fabric)
+	return { (cf * CFrame.new(3, 1.2, 2)).Position, (cf * CFrame.new(-3, 0, 1.5)).Position }
+end
+
+-- 약초 군락 (작은 덤불 + 버섯)
+function Build.herbPatch(parent: Instance, pos: Vector3): Vector3
+	local rng = Build.rng
+	for _ = 1, 4 do
+		local p = pos + Vector3.new(rng:NextNumber(-2, 2), 0, rng:NextNumber(-2, 2))
+		Build.part(parent, Vector3.new(0.25, 0.6, 0.25), CFrame.new(p + Vector3.new(0, 0.3, 0)), Color3.fromRGB(210, 200, 180), Enum.Material.SmoothPlastic, { CanCollide = false })
+		Build.part(parent, Vector3.new(0.3, 0.7, 0.7), CFrame.new(p + Vector3.new(0, 0.65, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(150, 60, 50), Enum.Material.SmoothPlastic, {
+			Shape = Enum.PartType.Cylinder,
+			CanCollide = false,
+		})
+	end
+	return pos
+end
+
+-- 쓰러진 벌목꾼 시신. 인식표 놓을 자리를 돌려줌
+function Build.corpse(parent: Instance, cf: CFrame): Vector3
+	local m = Build.model(parent, "Corpse")
+	local jacket = Color3.fromRGB(150, 70, 30)
+	local pants = Color3.fromRGB(40, 45, 60)
+	local skin = Color3.fromRGB(170, 160, 150)
+	Build.part(m, Vector3.new(4.5, 0.05, 3.5), cf * CFrame.new(0, 0.03, 0) * CFrame.Angles(0, 0.4, 0), Color3.fromRGB(60, 10, 10), Enum.Material.SmoothPlastic, {
+		CanCollide = false,
+		CanQuery = false,
+	}) -- 핏자국
+	Build.part(m, Vector3.new(2, 1, 1.2), cf * CFrame.new(0, 0.55, 0), jacket, Enum.Material.Fabric) -- 몸통 (엎드림)
+	Build.part(m, Vector3.new(1.1, 1.1, 1.1), cf * CFrame.new(0, 0.55, -1.25), skin, Enum.Material.SmoothPlastic)
+	Build.part(m, Vector3.new(1.3, 0.5, 1.3), cf * CFrame.new(0, 1.05, -1.35), Color3.fromRGB(220, 180, 30), Enum.Material.Plastic) -- 안전모
+	for _, x in { -0.5, 0.5 } do
+		Build.part(m, Vector3.new(0.9, 0.9, 2.2), cf * CFrame.new(x, 0.45, 1.7) * CFrame.Angles(0, x * 0.3, 0), pants, Enum.Material.Fabric)
+	end
+	Build.part(m, Vector3.new(0.8, 0.8, 2), cf * CFrame.new(-1.4, 0.4, -1) * CFrame.Angles(0, 0.6, 0), jacket, Enum.Material.Fabric)
+	Build.part(m, Vector3.new(0.8, 0.8, 2), cf * CFrame.new(1.5, 0.4, 0.2) * CFrame.Angles(0, -1.2, 0), jacket, Enum.Material.Fabric)
+	-- 긁힌 자국
+	for i = -1, 1 do
+		Build.part(m, Vector3.new(0.15, 0.06, 3), cf * CFrame.new(i * 0.5 + 2.6, 0.05, -1) * CFrame.Angles(0, 0.3, 0), Color3.fromRGB(40, 10, 10), Enum.Material.SmoothPlastic, {
+			CanCollide = false,
+			CanQuery = false,
+		})
+	end
+	return (cf * CFrame.new(1.6, 0.06, -2.2)).Position
 end
 
 return Build

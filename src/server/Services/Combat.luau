@@ -33,7 +33,7 @@ local function ready(player: Player, key: string, seconds: number): boolean
 end
 
 local function alive(player: Player): (Model?, Humanoid?, BasePart?)
-	if player:GetAttribute("InRound") ~= true or player:GetAttribute("Hiding") == true then
+	if player:GetAttribute("InRound") ~= true or player:GetAttribute("Hiding") == true or player:GetAttribute("Downed") == true then
 		return nil, nil, nil
 	end
 	local char = player.Character

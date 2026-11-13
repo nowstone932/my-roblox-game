@@ -1,6 +1,7 @@
 -- 게임에 나오는 모든 아이템 정의
 --   kind = "Material" : 제작 재료 (가방에 개수로 쌓임)
 --   kind = "Quest"    : 탈출에 필요한 핵심 부품 (가방에 표시, 장소에 설치)
+--   kind = "Collect"  : 수집품 (인식표). 라운드가 끝나도 기록이 남음
 --   kind = "Tool"     : 손에 드는 도구. 화면 아래 핫바(1~9번)에 실제 아이템으로 들어옵니다.
 
 export type ItemDef = {
@@ -27,6 +28,7 @@ local Items: { [string]: ItemDef } = {
 	CarKey = { name = "트럭 열쇠", kind = "Quest", color = Color3.fromRGB(230, 230, 120), desc = "벌목 트럭용" },
 	Antenna = { name = "안테나 부품", kind = "Quest", color = Color3.fromRGB(170, 220, 255), desc = "감시탑 무전기 수리용" },
 	Rune = { name = "룬 조각", kind = "Quest", color = Color3.fromRGB(150, 60, 255), desc = "괴물을 봉인하는 말뚝의 재료" },
+	DogTag = { name = "인식표", kind = "Collect", color = Color3.fromRGB(190, 190, 200), desc = "실종된 벌목꾼의 인식표" },
 
 	-- 도구 (핫바)
 	FlareGun = { name = "조명탄 총", kind = "Tool", color = Color3.fromRGB(255, 120, 40), desc = "원거리 공격. 총소리는 괴물을 부른다" },
@@ -39,7 +41,7 @@ local Items: { [string]: ItemDef } = {
 
 -- 가방에 보여줄 순서
 local order = {
-	"Fuse", "Battery", "FuelCan", "CarKey", "Antenna", "Rune",
+	"Fuse", "Battery", "FuelCan", "CarKey", "Antenna", "Rune", "DogTag",
 	"Scrap", "Wood", "Herb", "Gunpowder", "Cloth", "Ammo",
 	"FlareGun", "Axe", "Flashbang", "Trap", "Medkit", "SealStake",
 }

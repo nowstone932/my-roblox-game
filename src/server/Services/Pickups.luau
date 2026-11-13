@@ -1,6 +1,7 @@
 -- 주울 수 있는 것들
---   재료: 숲 곳곳에 무작위, 주우면 일정 시간 뒤 다른 곳에 다시 생김
---   탈출 부품: Story.QuestItems 의 장소 후보 중 매 라운드 무작위 위치 (리스폰 없음)
+--   재료: 어울리는 장소(Config.Materials의 places) + 일부는 숲 바닥. 주우면 잠시 뒤 다른 곳에 다시 생김
+--   탈출 부품: Story.QuestItems 의 장소 중 매 라운드 무작위 (전기함 속 퓨즈, 열쇠걸이의 열쇠 …)
+--   인식표: 실종자 시신 옆. 주우면 그 사람의 마지막 기록이 뜨고 "인식표" 기록이 쌓임
 --   쪽지: 고정 위치. E로 읽으면 화면에 내용이 뜸
 -- 플레이어가 죽으면 들고 있던 탈출 부품은 그 자리에 떨어집니다.
 
@@ -9,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Items = require(ReplicatedStorage.Shared.Items)
+local ItemModels = require(ReplicatedStorage.Shared.ItemModels)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Story = require(ReplicatedStorage.Shared.Story)
 local Inventory = require(script.Parent.Inventory)
@@ -22,154 +24,188 @@ local map = nil
 local folder: Folder? = nil
 local generation = 0
 local rng = Random.new()
+local taken: { [string]: boolean } = {} -- 이미 아이템이 놓인 자리
 
--- 아이템마다 모양을 조금씩 다르게
-local SHAPES: { [string]: { size: Vector3, shape: Enum.PartType? } } = {
-	Fuse = { size = Vector3.new(1.4, 0.6, 0.6), shape = Enum.PartType.Cylinder },
-	Battery = { size = Vector3.new(1.6, 1.2, 1) },
-	FuelCan = { size = Vector3.new(1.2, 1.8, 0.8) },
-	CarKey = { size = Vector3.new(0.6, 0.15, 0.3) },
-	Antenna = { size = Vector3.new(0.25, 2.2, 0.25) },
-	Rune = { size = Vector3.new(0.9, 1.3, 0.4) },
-	Wood = { size = Vector3.new(2, 0.6, 0.6), shape = Enum.PartType.Cylinder },
-	Scrap = { size = Vector3.new(1.2, 0.5, 1) },
-	Herb = { size = Vector3.new(0.9, 0.9, 0.9), shape = Enum.PartType.Ball },
-	Gunpowder = { size = Vector3.new(0.9, 1, 0.9) },
-	Cloth = { size = Vector3.new(1.3, 0.3, 1.1) },
-}
+local function key(pos: Vector3): string
+	return ("%.1f,%.1f,%.1f"):format(pos.X, pos.Y, pos.Z)
+end
 
 local function randomForestSpot(): Vector3
 	local half = map.HalfSize - 15
 	for _ = 1, 30 do
 		local pos = Vector3.new(rng:NextNumber(-half, half), 0, rng:NextNumber(-half, half))
 		if map.isOpenSpot(pos) then
-			-- 바닥 높이 찾기 (지붕 위나 나무 위는 피함)
+			-- 바닥 높이 찾기 (지붕/나무 위는 피함)
 			local result = Workspace:Raycast(pos + Vector3.new(0, 60, 0), Vector3.new(0, -80, 0))
-			if result and result.Position.Y < 2 then
-				return result.Position + Vector3.new(0, 0.6, 0)
+			if result and result.Position.Y < 1 then
+				return result.Position
 			end
 		end
 	end
-	return Vector3.new(0, 0.6, 150)
+	return Vector3.new(0, 0, 150)
 end
 
-local function spawnItem(itemId: string, position: Vector3, respawn: boolean)
+-- places 중 비어 있는 자리 하나 (없으면 nil)
+local function freeSpot(places: { string }): Vector3?
+	local candidates = {}
+	for _, place in places do
+		for _, pos in map.Spots[place] or {} do
+			if not taken[key(pos)] then
+				table.insert(candidates, pos)
+			end
+		end
+	end
+	if #candidates == 0 then
+		return nil
+	end
+	return candidates[rng:NextInteger(1, #candidates)]
+end
+
+local function onPicked(player: Player, itemId: string)
+	local def = Items.defs[itemId]
+	if def.kind == "Quest" then
+		notify:FireClient(player, ("%s 획득! — %s"):format(def.name, def.desc))
+	else
+		notify:FireClient(player, def.name .. " +1")
+	end
+end
+
+-- 아이템 하나 놓기. spot은 "표면 위치" (모델 바닥이 여기 닿음)
+local function spawnItem(itemId: string, spot: Vector3, onTaken: ((Player) -> ())?, markSpot: boolean?)
 	if not folder then
 		return
 	end
 	local def = Items.defs[itemId]
-	local look = SHAPES[itemId] or { size = Vector3.new(1, 1, 1) }
-	local isQuest = def.kind == "Quest"
-	local myGeneration = generation
-
-	local part = Instance.new("Part")
-	part.Name = itemId
-	if look.shape then
-		part.Shape = look.shape
+	local isSpecial = def.kind == "Quest" or def.kind == "Collect"
+	local model = ItemModels.create(itemId)
+	local root = model.PrimaryPart :: BasePart
+	model:PivotTo(CFrame.new(spot + Vector3.new(0, 0.05, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0))
+	model:SetAttribute("Spin", def.kind == "Quest")
+	if markSpot then
+		taken[key(spot)] = true
 	end
-	part.Size = look.size
-	part.Anchored = true
-	part.CanCollide = false
-	part.Color = def.color
-	part.Material = if isQuest then Enum.Material.Neon else Enum.Material.SmoothPlastic
-	part.CFrame = CFrame.new(position) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
-	part:SetAttribute("Spin", isQuest) -- 클라이언트가 탈출 부품을 빙글빙글 돌림
 
+	-- 어두워도 찾을 수 있게 은은한 빛 (탈출 부품은 더 밝게 + 반짝임)
 	local light = Instance.new("PointLight")
 	light.Color = def.color
-	light.Range = if isQuest then 16 else 6
-	light.Brightness = if isQuest then 1.5 else 0.8
-	light.Parent = part
-
-	if isQuest then
+	light.Range = if isSpecial then 14 else 6
+	light.Brightness = if isSpecial then 1.2 else 0.6
+	light.Parent = root
+	if isSpecial then
 		local sparkle = Instance.new("ParticleEmitter")
 		sparkle.Color = ColorSequence.new(def.color)
 		sparkle.LightEmission = 1
-		sparkle.Size = NumberSequence.new(0.2)
+		sparkle.Size = NumberSequence.new(0.15)
 		sparkle.Lifetime = NumberRange.new(1)
-		sparkle.Rate = 4
-		sparkle.Speed = NumberRange.new(1)
-		sparkle.Parent = part
+		sparkle.Rate = 3
+		sparkle.Speed = NumberRange.new(0.8)
+		sparkle.Parent = root
 	end
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "줍기"
 	prompt.ObjectText = def.name
-	prompt.HoldDuration = if isQuest then 0.6 else 0.25
+	prompt.HoldDuration = if isSpecial then 0.6 else 0.25
 	prompt.MaxActivationDistance = 9
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = part
+	prompt.Parent = root
 
 	prompt.Triggered:Connect(function(player: Player)
-		if part.Parent == nil or player:GetAttribute("InRound") ~= true or player:GetAttribute("Hiding") == true then
+		if model.Parent == nil or player:GetAttribute("InRound") ~= true then
 			return
 		end
-		part:Destroy()
-		Inventory.add(player, itemId, 1)
-		if isQuest then
-			notify:FireClient(player, ("%s 획득! — %s"):format(def.name, def.desc))
-		else
-			notify:FireClient(player, def.name .. " +1")
+		if player:GetAttribute("Hiding") == true or player:GetAttribute("Downed") == true then
+			return
 		end
-		if respawn then
-			local matDef = Config.Materials[itemId]
-			task.delay(matDef and matDef.RespawnTime or 60, function()
-				if generation == myGeneration then
-					spawnItem(itemId, randomForestSpot(), true)
-				end
-			end)
+		model:Destroy()
+		taken[key(spot)] = nil
+		if onTaken then
+			onTaken(player)
+		else
+			Inventory.add(player, itemId, 1)
+			onPicked(player, itemId)
 		end
 	end)
 
-	part.Parent = folder
+	model.Parent = folder
 end
 
-local function shuffled(list: { Vector3 }): { Vector3 }
-	local copy = table.clone(list)
-	for i = #copy, 2, -1 do
-		local j = rng:NextInteger(1, i)
-		copy[i], copy[j] = copy[j], copy[i]
+local function spawnMaterial(itemId: string)
+	local rule = Config.Materials[itemId]
+	local spot: Vector3? = nil
+	if rng:NextNumber() >= (rule.forest or 0) then
+		spot = freeSpot(rule.places or {})
 	end
-	return copy
+	local markSpot = spot ~= nil
+	spot = spot or randomForestSpot()
+	local myGeneration = generation
+	spawnItem(itemId, spot :: Vector3, function(player)
+		Inventory.add(player, itemId, 1)
+		onPicked(player, itemId)
+		task.delay(rule.RespawnTime, function()
+			if generation == myGeneration then
+				spawnMaterial(itemId)
+			end
+		end)
+	end, markSpot)
 end
 
-local function spawnNotes()
+local function spawnDogTags()
+	local spots = map.Spots.Corpse or {}
+	for i, spot in spots do
+		local logger = Story.Loggers[i]
+		if logger then
+			spawnItem("DogTag", spot, function(player)
+				Inventory.add(player, "DogTag", 1)
+				local stats = player:FindFirstChild("leaderstats")
+				local tags = stats and stats:FindFirstChild("인식표")
+				if tags and tags:IsA("IntValue") then
+					tags.Value += 1
+				end
+				showNote:FireClient(player, "Logger" .. i)
+				notify:FireClient(player, ("인식표 발견: %s (%d/%d)"):format(logger.name, i, #Story.Loggers))
+			end, true)
+		end
+	end
+end
+
+local function makeNotePaper(parent: Instance, pos: Vector3, title: string, onRead: (Player) -> ())
+	local paper = Instance.new("Part")
+	paper.Name = "Note"
+	paper.Size = Vector3.new(1.2, 0.05, 1.6)
+	paper.CFrame = CFrame.new(pos + Vector3.new(0, 0.03, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
+	paper.Color = Color3.fromRGB(235, 225, 190)
+	paper.Material = Enum.Material.Fabric
+	paper.Anchored = true
+	paper.CanCollide = false
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 240, 200)
+	light.Range = 5
+	light.Brightness = 0.6
+	light.Parent = paper
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "읽기"
+	prompt.ObjectText = title
+	prompt.MaxActivationDistance = 9
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = paper
+	prompt.Triggered:Connect(onRead)
+	paper.Parent = parent
+end
+
+function Pickups.init(mapInfo)
+	map = mapInfo
 	local notes = Instance.new("Folder")
 	notes.Name = "Notes"
 	for _, note in Story.Notes do
 		local pos = map.NoteSpots[note.place]
 		if pos then
-			local paper = Instance.new("Part")
-			paper.Name = "Note_" .. note.id
-			paper.Size = Vector3.new(1.2, 0.05, 1.6)
-			paper.CFrame = CFrame.new(pos + Vector3.new(0, 0.05, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
-			paper.Color = Color3.fromRGB(235, 225, 190)
-			paper.Material = Enum.Material.Fabric
-			paper.Anchored = true
-			paper.CanCollide = false
-			local light = Instance.new("PointLight")
-			light.Color = Color3.fromRGB(255, 240, 200)
-			light.Range = 5
-			light.Brightness = 0.6
-			light.Parent = paper
-			local prompt = Instance.new("ProximityPrompt")
-			prompt.ActionText = "읽기"
-			prompt.ObjectText = note.title
-			prompt.MaxActivationDistance = 9
-			prompt.RequiresLineOfSight = false
-			prompt.Parent = paper
-			prompt.Triggered:Connect(function(player)
+			makeNotePaper(notes, pos, note.title, function(player)
 				showNote:FireClient(player, note.id)
 			end)
-			paper.Parent = notes
 		end
 	end
 	notes.Parent = map.Folder
-end
-
-function Pickups.init(mapInfo)
-	map = mapInfo
-	spawnNotes()
 end
 
 -- 라운드 시작: 모두 지우고 새로 뿌림
@@ -180,40 +216,31 @@ function Pickups.reset()
 	newFolder.Parent = Workspace
 	folder = newFolder
 
-	-- 탈출 부품 (장소 후보에서 겹치지 않게)
+	-- 탈출 부품: 어울리는 장소에만
 	for itemId, rule in Story.QuestItems do
-		local candidates = {}
-		for _, place in rule.places do
-			for _, pos in map.Spots[place] or {} do
-				table.insert(candidates, pos)
+		for _ = 1, rule.count do
+			local spot = freeSpot(rule.places)
+			if spot then
+				spawnItem(itemId, spot, nil, true)
+			else
+				warn(("[Pickups] %s 놓을 자리가 부족합니다 (%s)"):format(itemId, table.concat(rule.places, ", ")))
+				spawnItem(itemId, randomForestSpot(), nil, false)
 			end
-		end
-		candidates = shuffled(candidates)
-		for i = 1, rule.count do
-			local pos = candidates[i] or randomForestSpot()
-			spawnItem(itemId, pos + Vector3.new(0, 0.4, 0), false)
 		end
 	end
 
-	-- 재료
+	spawnDogTags()
+
 	for itemId, rule in Config.Materials do
 		for _ = 1, rule.Count do
-			spawnItem(itemId, randomForestSpot(), true)
-		end
-	end
-	-- 캠프/건물 안에 재료 조금 더
-	for _, place in { "Cabin", "Sawmill", "GasShed", "Junk", "Camp" } do
-		for _, pos in map.Spots[place] or {} do
-			if rng:NextNumber() < 0.5 then
-				local mats = { "Scrap", "Wood", "Gunpowder", "Cloth", "Herb" }
-				spawnItem(mats[rng:NextInteger(1, #mats)], pos + Vector3.new(rng:NextNumber(-1, 1), 0.3, rng:NextNumber(-1, 1)), false)
-			end
+			spawnMaterial(itemId)
 		end
 	end
 end
 
 function Pickups.clear()
 	generation += 1
+	taken = {}
 	if folder then
 		folder:Destroy()
 		folder = nil
@@ -222,11 +249,13 @@ end
 
 -- 죽은 자리에 탈출 부품 떨어뜨리기
 function Pickups.dropQuestItems(player: Player, position: Vector3)
+	local ground = Workspace:Raycast(position + Vector3.new(0, 3, 0), Vector3.new(0, -20, 0))
+	local base = if ground then ground.Position else Vector3.new(position.X, 0, position.Z)
 	for _, itemId in Items.order do
 		if Items.defs[itemId].kind == "Quest" then
 			local count = Inventory.get(player, itemId)
 			for _ = 1, count do
-				spawnItem(itemId, position + Vector3.new(rng:NextNumber(-3, 3), 0.8, rng:NextNumber(-3, 3)), false)
+				spawnItem(itemId, base + Vector3.new(rng:NextNumber(-3, 3), 0, rng:NextNumber(-3, 3)), nil, false)
 			end
 			if count > 0 then
 				Inventory.set(player, itemId, 0)
@@ -235,5 +264,15 @@ function Pickups.dropQuestItems(player: Player, position: Vector3)
 		end
 	end
 end
+
+function Pickups.setupStats(player: Player)
+	local stats = player:FindFirstChild("leaderstats")
+	if stats and not stats:FindFirstChild("인식표") then
+		local tags = Instance.new("IntValue")
+		tags.Name = "인식표"
+		tags.Parent = stats
+	end
+end
+
 
 return Pickups

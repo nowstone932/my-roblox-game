@@ -30,6 +30,31 @@ Config.Monster = {
 	AttackCooldown = 1.4,
 	DownedTime = 40, -- 쓰러져 있는 시간. 이 안에 봉인 말뚝을 박아야 함
 	NearPlayerWanderChance = 0.55, -- 배회할 때 플레이어 근처로 갈 확률 (높을수록 무서움)
+
+	-- 공포 연출 행동
+	StalkChance = 0.5, -- 멀리서 발견했을 때 바로 달려오지 않고 가만히 지켜볼 확률
+	StalkMinDistance = 35, -- 이 거리보다 멀 때만 지켜보기
+	StalkTime = { 3, 6 }, -- 지켜보는 시간(초) 범위
+	StalkCooldown = 40,
+	LungeSpeedMultiplier = 1.7, -- 돌진할 때 속도 배수
+	LungeTime = 1.2,
+	LungeCooldown = 8,
+	AmbushAfter = 45, -- 이 시간 동안 아무도 못 찾으면 플레이어 등 뒤 어딘가로 순간이동
+	AmbushDistance = { 45, 65 },
+	ClosetSearchChance = 0.35, -- 숨는 걸 들켰을 때 옷장을 열어젖힐 확률
+	ClosetSearchDamage = 40,
+}
+
+-- 플레이어가 괴물에게 치명상을 입으면 바로 죽지 않고 쓰러짐 → 동료가 살려줄 수 있음
+Config.Downed = {
+	BleedOutTime = 35, -- 이 시간 안에 못 살리면 사망
+	ReviveHoldTime = 4, -- 동료가 E를 누르고 있어야 하는 시간
+	ReviveHealth = 40,
+}
+
+-- 랜덤 공포 이벤트 (환청, 유령, 정전 등)
+Config.Events = {
+	Interval = { 50, 110 }, -- 이벤트 사이 간격(초)
 }
 
 -- 소리 범위: 이 거리 안의 괴물이 소리 난 곳으로 조사하러 옴
@@ -42,12 +67,14 @@ Config.Noise = {
 }
 
 -- 숲에 무작위로 떨어져 있는 재료 (탈출 부품은 Story.luau 의 QuestItems)
+-- places: 그 재료가 놓일 수 있는 장소 (MapBuilder가 만든 자리 이름)
+-- forest: 숲 바닥에 아무렇게나 떨어져 있을 비율 (0~1)
 Config.Materials = {
-	Scrap = { Count = 30, RespawnTime = 45 },
-	Wood = { Count = 30, RespawnTime = 45 },
-	Herb = { Count = 18, RespawnTime = 60 },
-	Gunpowder = { Count = 14, RespawnTime = 60 },
-	Cloth = { Count = 14, RespawnTime = 60 },
+	Scrap = { Count = 26, RespawnTime = 45, places = { "Junk", "Shelf", "SawmillFloor", "Workbench" }, forest = 0.15 },
+	Wood = { Count = 26, RespawnTime = 45, places = { "LogPile", "SawmillFloor", "Campfire" }, forest = 0.5 },
+	Herb = { Count = 18, RespawnTime = 60, places = { "HerbPatch" }, forest = 0.4 },
+	Gunpowder = { Count = 8, RespawnTime = 60, places = { "ExplosiveCrate", "Shelf" }, forest = 0 },
+	Cloth = { Count = 12, RespawnTime = 60, places = { "Clothesline", "Bed", "CabinFloor" }, forest = 0 },
 }
 
 Config.Tools = {
@@ -81,6 +108,8 @@ Config.Sounds = {
 	Heartbeat = 0, -- 괴물이 가까울 때 (반복)
 	Gunshot = 0,
 	Flashbang = 0,
+	Footstep = 0, -- 괴물 발소리
+	Whisper = 0, -- 환청
 }
 
 -- 수익화: Creator Hub에서 게임패스/개발자 상품을 만든 뒤 숫자 ID를 넣으세요. 0이면 꺼짐.

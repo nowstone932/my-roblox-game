@@ -74,12 +74,32 @@ Story.Notes = {
 
 -- 탈출 부품이 놓일 수 있는 장소 (매 라운드 무작위로 골라져서 위치가 바뀝니다)
 Story.QuestItems = {
-	Fuse = { count = 4, places = { "Cabin", "Sawmill", "GasShed", "TowerBase", "Junk" } },
-	Battery = { count = 1, places = { "GasShed", "Junk" } },
-	FuelCan = { count = 1, places = { "GasShed", "Sawmill", "Junk" } },
-	CarKey = { count = 1, places = { "Cabin" } },
-	Antenna = { count = 3, places = { "TowerBase", "Junk", "Helipad", "Camp" } },
-	Rune = { count = 4, places = { "Altar", "Stones" } },
+	Fuse = { count = 4, places = { "FuseBox" } }, -- 벽에 달린 전기함 안
+	Battery = { count = 1, places = { "CarHood", "Shelf" } }, -- 고물차 보닛 위, 창고 선반
+	FuelCan = { count = 1, places = { "Pumps", "SawmillFloor" } }, -- 주유기 옆, 제재소
+	CarKey = { count = 1, places = { "KeyHook" } }, -- 오두막 벽 열쇠걸이
+	Antenna = { count = 3, places = { "TowerCrate", "Helipad", "Junk" } },
+	Rune = { count = 4, places = { "Cairn", "Altar" } }, -- 돌무덤 꼭대기, 제단
+}
+
+-- 실종된 벌목꾼 7명. 숲 곳곳의 시신 옆에서 인식표를 주우면 마지막 기록이 나옵니다.
+Story.Loggers = {
+	{ name = "박만수 반장", words = "회사 놈들 말을 듣는 게 아니었어. 제단 나무는 베면 안 됐다." },
+	{ name = "김철호", words = "엽총 두 발을 맞혔는데도 쓰러지지 않았어. 일어나서 다시 왔어." },
+	{ name = "이영식", words = "옷장 안에서 숨을 참았다. 놈이 문 앞에서 냄새를 맡더니 그냥 갔다." },
+	{ name = "최동규", words = "불빛이 다 꺼지면 놈이 근처에 있는 거다. 손전등도 깜빡이더라." },
+	{ name = "정순길", words = "트럭 열쇠는 내가 오두막 열쇠걸이에 걸어뒀어. 누구라도 도망쳐." },
+	{ name = "한기수", words = "멀리서 가만히 서서 우리를 보고만 있었어. 그러다 사라졌다. 등 뒤에서 나타났어." },
+	{ name = "윤재석", words = "룬 세 개. 할머니가 말했던 거야. 쓰러뜨린 다음에 박아야 한대." },
+}
+
+Story.Whispers = {
+	"…돌아가…",
+	"…여기야… 이쪽으로 와…",
+	"…너도 여기 남게 될 거야…",
+	"(누군가 뒤에서 숨 쉬는 소리가 들린다)",
+	"(멀리서 나뭇가지 부러지는 소리)",
+	"…일곱… 여덟…",
 }
 
 Story.Endings = {

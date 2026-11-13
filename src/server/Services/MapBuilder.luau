@@ -97,6 +97,13 @@ function MapBuilder.build(): MapInfo
 		spots[place] = spots[place] or {}
 		table.insert(spots[place], pos)
 	end
+	local function addSpots(dict: { [string]: { Vector3 } })
+		for place, list in dict do
+			for _, pos in list do
+				addSpot(place, pos)
+			end
+		end
+	end
 	local noteSpots: { [string]: Vector3 } = {}
 	local closets = {}
 
@@ -160,7 +167,7 @@ function MapBuilder.build(): MapInfo
 	Build.carHulk(props, carCf, Color3.fromRGB(40, 60, 45))
 	local hazard = Build.part(props, Vector3.new(0.6, 0.6, 0.6), carCf * CFrame.new(0, 3.2, -6), Color3.fromRGB(255, 120, 0), Enum.Material.Neon)
 	Build.light(hazard, Color3.fromRGB(255, 120, 0), 18, 1.2, true)
-	noteSpots.Car = (carCf * CFrame.new(-3.6, 3.2, -2)).Position
+	noteSpots.Car = (carCf * CFrame.new(0, 3.05, -4)).Position -- 보닛 위
 	clear(Vector3.new(0, 0, 268), 30)
 
 	local spawn = Instance.new("SpawnLocation")
@@ -181,6 +188,7 @@ function MapBuilder.build(): MapInfo
 	camp.Name = "LoggingCamp"
 	camp.Parent = folder
 	clear(Vector3.new(0, 0, 100), 62)
+	clear(Vector3.new(-60, 0, 205), 8) -- 숲길 옆 시신 자리
 
 	local cabinCfs = {
 		CFrame.lookAt(Vector3.new(-38, 0, 128), Vector3.new(0, 0, 100)),
@@ -189,14 +197,12 @@ function MapBuilder.build(): MapInfo
 	}
 	for i, cf in cabinCfs do
 		local _, cabinSpots, closetCf, doorFront = Build.cabin(camp, cf, "Cabin" .. i)
-		for _, s in cabinSpots do
-			addSpot("Cabin", s)
-		end
+		addSpots(cabinSpots)
 		local closet, hidePoint = Build.closet(camp, closetCf)
 		table.insert(closets, { model = closet, hidePoint = hidePoint })
 		Build.lanternPost(camp, doorFront * CFrame.new(4, -1, 0))
 		if i == 1 then
-			noteSpots.Camp = (cf * CFrame.new(-4, 4.8, 2)).Position -- 반장 오두막 탁자
+			noteSpots.Camp = (cf * CFrame.new(-4, 4.25, 2)).Position -- 반장 오두막 탁자
 		end
 	end
 
@@ -212,8 +218,16 @@ function MapBuilder.build(): MapInfo
 		local a = k * math.pi / 2 + 0.4
 		Build.part(camp, Vector3.new(6, 1.2, 1.2), CFrame.new(math.cos(a) * 7, 0.6, 100 + math.sin(a) * 7) * CFrame.Angles(0, -a, 0), C.Wood, Enum.Material.Wood)
 	end
-	addSpot("Camp", Vector3.new(6, 1.4, 92))
-	addSpot("Camp", Vector3.new(-8, 1.4, 108))
+	addSpot("Campfire", Vector3.new(8, 0, 94))
+	addSpot("Campfire", Vector3.new(-9, 0, 107))
+	addSpot("Camp", Vector3.new(6, 0, 92))
+
+	-- 빨랫줄, 화약 상자, 시신
+	for _, pos in Build.clothesline(camp, CFrame.lookAt(Vector3.new(-14, 0, 152), Vector3.new(0, 0, 152))) do
+		addSpot("Clothesline", pos)
+	end
+	addSpot("ExplosiveCrate", Build.explosivesCrate(camp, CFrame.lookAt(Vector3.new(26, 0, 152), Vector3.new(0, 0, 120))))
+	addSpot("Corpse", Build.corpse(camp, CFrame.new(-24, 0, 62) * CFrame.Angles(0, 1.2, 0)))
 
 	-- 제재소 (지붕만 있는 작업장)
 	local sawCf = CFrame.lookAt(Vector3.new(48, 0, 76), Vector3.new(0, 0, 76))
@@ -228,13 +242,21 @@ function MapBuilder.build(): MapInfo
 		Shape = Enum.PartType.Cylinder,
 	})
 	blade.CFrame = sawCf * CFrame.new(0, 4, 0)
-	Build.logPile(camp, sawCf * CFrame.new(0, 0, 14))
-	Build.logPile(camp, sawCf * CFrame.new(-16, 0, -2) * CFrame.Angles(0, math.rad(90), 0))
-	Build.lanternPost(camp, sawCf * CFrame.new(11, 0, -8))
-	for _, p in { Vector3.new(-6, 3.4, 0), Vector3.new(8, 1, -5), Vector3.new(-8, 1, 5), Vector3.new(4, 1, 9) } do
-		addSpot("Sawmill", (sawCf * CFrame.new(p)).Position)
+	for _, pileCf in { sawCf * CFrame.new(0, 0, 14), sawCf * CFrame.new(-16, 0, -2) * CFrame.Angles(0, math.rad(90), 0) } do
+		Build.logPile(camp, pileCf)
+		addSpot("LogPile", (pileCf * CFrame.new(0, 5.6, 0)).Position)
+		addSpot("LogPile", (pileCf * CFrame.new(3.5, 0, 2.5)).Position)
 	end
-	noteSpots.Sawmill = (sawCf * CFrame.new(5, 3.4, 0)).Position
+	Build.lanternPost(camp, sawCf * CFrame.new(11, 0, -8))
+	for _, p in { Vector3.new(-6, 3, 0), Vector3.new(8, 0, -5), Vector3.new(-8, 0, 5), Vector3.new(4, 0, 9) } do
+		addSpot("SawmillFloor", (sawCf * CFrame.new(p)).Position)
+	end
+	for _, pos in Build.workbench(camp, sawCf * CFrame.new(-6, 0, -6)) do
+		addSpot("Workbench", pos)
+	end
+	-- 제재소 기둥의 전기함
+	addSpot("FuseBox", Build.fuseBox(camp, sawCf * CFrame.new(10, 4.5, -7.6)))
+	noteSpots.Sawmill = (sawCf * CFrame.new(5, 3, 0)).Position
 
 	-- 벌목 트럭 (북쪽을 바라봄)
 	local truck = Build.truck(camp, CFrame.new(18, 0, 50))
@@ -288,12 +310,18 @@ function MapBuilder.build(): MapInfo
 	local radio = Build.part(tower, Vector3.new(2.4, 1.6, 1.4), radioTable.CFrame * CFrame.new(0, 1.05, 0), Color3.fromRGB(60, 65, 55), Enum.Material.Metal, { Name = "Radio" })
 	local radioLamp = Build.part(tower, Vector3.new(0.3, 0.3, 0.1), radio.CFrame * CFrame.new(0.8, 0.4, -0.75), Color3.fromRGB(255, 40, 40), Enum.Material.Neon)
 	Build.light(radioLamp, Color3.fromRGB(255, 40, 40), 8, 1, true)
-	addSpot("TowerBase", towerPos + Vector3.new(4, 1, 3))
-	addSpot("TowerBase", towerPos + Vector3.new(-10, 1, 8))
-	addSpot("TowerBase", towerPos + Vector3.new(9, 1, -10))
-	Build.crate(tower, CFrame.new(towerPos + Vector3.new(-10, 0, 8)))
+	for _, offset in { Vector3.new(-10, 0, 8), Vector3.new(-12, 0, 4), Vector3.new(10, 0, -10) } do
+		Build.crate(tower, CFrame.new(towerPos + offset) * CFrame.Angles(0, rng:NextNumber(0, 1), 0))
+		addSpot("TowerCrate", towerPos + offset + Vector3.new(0, 3, 0))
+	end
+	addSpot("TowerCrate", towerPos + Vector3.new(4, 0, 3))
 	Build.barrel(tower, CFrame.new(towerPos + Vector3.new(10, 0, 6)))
-	noteSpots.Tower = towerPos + Vector3.new(2, 1, 14)
+	addSpot("ExplosiveCrate", Build.explosivesCrate(tower, CFrame.lookAt(towerPos + Vector3.new(-12, 0, -10), towerPos)))
+	-- 탑 다리에 붙은 전기함
+	local leg = towerPos + Vector3.new(6, 4.5, 6.75)
+	addSpot("FuseBox", Build.fuseBox(tower, CFrame.lookAt(leg, leg + Vector3.new(0, 0, 10))))
+	addSpot("Corpse", Build.corpse(tower, CFrame.new(towerPos + Vector3.new(-6, 0, 18)) * CFrame.Angles(0, -0.5, 0)))
+	noteSpots.Tower = towerPos + Vector3.new(2, 0, 14)
 	Build.lanternPost(tower, CFrame.new(towerPos + Vector3.new(5, 0, 16)))
 
 	-----------------------------------------------------------------------
@@ -308,13 +336,12 @@ function MapBuilder.build(): MapInfo
 	Build.part(folder, Vector3.new(2, 0.2, 12), CFrame.new(heliPos + Vector3.new(-4, 0.75, 0)), Color3.fromRGB(200, 200, 190), Enum.Material.SmoothPlastic)
 	Build.part(folder, Vector3.new(2, 0.2, 12), CFrame.new(heliPos + Vector3.new(4, 0.75, 0)), Color3.fromRGB(200, 200, 190), Enum.Material.SmoothPlastic)
 	Build.part(folder, Vector3.new(6, 0.2, 2), CFrame.new(heliPos + Vector3.new(0, 0.75, 0)), Color3.fromRGB(200, 200, 190), Enum.Material.SmoothPlastic)
-	for k = 0, 5 do
-		local a = k * math.pi / 3
-		addSpot("Helipad", heliPos + Vector3.new(math.cos(a) * 24, 1, math.sin(a) * 24))
+	-- 헬기장 가장자리의 보급 상자들
+	for _, pos in { Vector3.new(-20, 0, -14), Vector3.new(20, 0, 16), Vector3.new(-16, 0, 20) } do
+		Build.crate(folder, CFrame.new(heliPos + pos) * CFrame.Angles(0, rng:NextNumber(0, 1), 0))
+		addSpot("Helipad", heliPos + pos + Vector3.new(0, 3, 0))
 	end
-	for _, pos in { Vector3.new(-18, 0, -18), Vector3.new(18, 0, 18) } do
-		Build.crate(folder, CFrame.new(heliPos + pos))
-	end
+	addSpot("Helipad", heliPos + Vector3.new(14, 0.7, -8))
 
 	-----------------------------------------------------------------------
 	-- 폐주유소 + 고물장 (동쪽)
@@ -341,20 +368,32 @@ function MapBuilder.build(): MapInfo
 	-- 창고 건물
 	local shedCf = CFrame.lookAt(gasPos + Vector3.new(0, 0, 10), gasPos + Vector3.new(0, 0, -10))
 	local _, shedSpots, shedCloset = Build.cabin(gas, shedCf, "GasShed")
-	for _, s in shedSpots do
-		addSpot("GasShed", s)
-	end
+	addSpots(shedSpots)
 	local closet, hidePoint = Build.closet(gas, shedCloset)
 	table.insert(closets, { model = closet, hidePoint = hidePoint })
-	addSpot("GasShed", gasPos + Vector3.new(-5, 1, -10))
-	noteSpots.GasShed = (shedCf * CFrame.new(-4, 4.8, 2)).Position
+	for _, x in { -7.5, -2.5, 2.5, 7.5 } do
+		addSpot("Pumps", gasPos + Vector3.new(x, 0, -11.5))
+	end
+	for _, pos in Build.shelf(gas, CFrame.lookAt(gasPos + Vector3.new(14, 0, -6), gasPos + Vector3.new(0, 0, -6))) do
+		addSpot("Shelf", pos)
+	end
+	for _, pos in Build.workbench(gas, CFrame.lookAt(gasPos + Vector3.new(-15, 0, -4), gasPos + Vector3.new(0, 0, -4))) do
+		addSpot("Workbench", pos)
+	end
+	addSpot("ExplosiveCrate", Build.explosivesCrate(gas, CFrame.lookAt(gasPos + Vector3.new(-17, 0, 8), gasPos)))
+	addSpot("ExplosiveCrate", Build.explosivesCrate(gas, CFrame.lookAt(Vector3.new(250, 0, 118), Vector3.new(232, 0, 140))))
+	addSpot("FuseBox", Build.fuseBox(gas, CFrame.lookAt(gasPos + Vector3.new(12, 6, -13.25), gasPos + Vector3.new(12, 6, -5))))
+	addSpot("Corpse", Build.corpse(gas, CFrame.new(gasPos + Vector3.new(-8, 0, -22)) * CFrame.Angles(0, 2.2, 0)))
+	noteSpots.GasShed = (shedCf * CFrame.new(-4, 4.25, 2)).Position
 	-- 고물장
 	local junkPos = Vector3.new(232, 0, 140)
 	local junkColors = { Color3.fromRGB(90, 40, 30), Color3.fromRGB(40, 50, 70), Color3.fromRGB(80, 80, 60), Color3.fromRGB(50, 70, 50) }
 	for i = 1, 6 do
 		local pos = junkPos + Vector3.new(rng:NextNumber(-22, 22), 0, rng:NextNumber(-22, 22))
-		Build.carHulk(gas, CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), junkColors[(i % #junkColors) + 1])
-		addSpot("Junk", pos + Vector3.new(0, 3.3, -3))
+		local carCf = CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
+		Build.carHulk(gas, carCf, junkColors[(i % #junkColors) + 1])
+		addSpot("CarHood", (carCf * CFrame.new(0, 3.05, -4)).Position)
+		addSpot("Junk", (carCf * CFrame.new(4.5, 0, rng:NextNumber(-4, 4))).Position)
 	end
 	for _ = 1, 8 do
 		Build.barrel(gas, CFrame.new(junkPos + Vector3.new(rng:NextNumber(-25, 25), 0, rng:NextNumber(-25, 25))))
@@ -362,6 +401,7 @@ function MapBuilder.build(): MapInfo
 	Build.fence(gas, junkPos + Vector3.new(-28, 0, 28), junkPos + Vector3.new(28, 0, 28), 8)
 	Build.fence(gas, junkPos + Vector3.new(28, 0, -28), junkPos + Vector3.new(28, 0, 28), 8)
 	Build.lanternPost(gas, CFrame.new(junkPos + Vector3.new(-20, 0, -24)))
+	addSpot("Corpse", Build.corpse(gas, CFrame.new(junkPos + Vector3.new(15, 0, 18)) * CFrame.Angles(0, 0.7, 0)))
 
 	-----------------------------------------------------------------------
 	-- 옛 제단 (북동쪽, 괴물의 둥지)
@@ -393,10 +433,11 @@ function MapBuilder.build(): MapInfo
 			CanCollide = false,
 		})
 	end
-	addSpot("Altar", altar.Position + Vector3.new(-2, 2, 0))
-	addSpot("Altar", altarPos + Vector3.new(12, 1, -12))
-	addSpot("Altar", altarPos + Vector3.new(-14, 1, 6))
-	noteSpots.Altar = altarPos + Vector3.new(0, 1, -14)
+	addSpot("Altar", altar.Position + Vector3.new(-2, 1.5, 0))
+	addSpot("Altar", altarPos + Vector3.new(12, 0, -12))
+	addSpot("Altar", altarPos + Vector3.new(-14, 0, 6))
+	addSpot("Corpse", Build.corpse(altarFolder, CFrame.new(altarPos + Vector3.new(8, 0, 14)) * CFrame.Angles(0, 2.8, 0)))
+	noteSpots.Altar = altarPos + Vector3.new(0, 0, -14)
 	-- 돌무덤 (룬 조각 자리)
 	for _ = 1, 7 do
 		local pos = altarPos + Vector3.new(rng:NextNumber(-90, 60), 0, rng:NextNumber(-40, 110))
@@ -404,7 +445,7 @@ function MapBuilder.build(): MapInfo
 		for i = 0, 3 do
 			Build.rock(altarFolder, pos + Vector3.new(0, i * 1.4, 0), 3.4 - i * 0.6)
 		end
-		addSpot("Stones", pos + Vector3.new(2.5, 1, 0))
+		addSpot("Cairn", pos + Vector3.new(2.6, 0, 0))
 		clear(pos, 6)
 	end
 
@@ -436,6 +477,8 @@ function MapBuilder.build(): MapInfo
 	local genCf = CFrame.lookAt(Vector3.new(42, 0, fenceZ + 30), Vector3.new(0, 0, fenceZ + 30))
 	clear(genCf.Position, 22)
 	local _, genSpots, genCloset = Build.cabin(gateFolder, genCf, "GeneratorShed")
+	genSpots.FuseBox = nil -- 발전기 바로 옆이라 퓨즈를 두지 않음
+	addSpots(genSpots)
 	local closet2, hide2 = Build.closet(gateFolder, genCloset)
 	table.insert(closets, { model = closet2, hidePoint = hide2 })
 	local generator = Build.part(gateFolder, Vector3.new(5, 4, 3.5), genCf * CFrame.new(2, 3, 3), Color3.fromRGB(70, 80, 60), Enum.Material.Metal, { Name = "Generator" })
@@ -445,7 +488,8 @@ function MapBuilder.build(): MapInfo
 		})
 		slot:SetAttribute("Slot", i)
 	end
-	noteSpots.Generator = genSpots[1]
+	noteSpots.Generator = genSpots.CabinTable[1]
+	addSpot("Corpse", Build.corpse(gateFolder, CFrame.new(-20, 0, fenceZ + 16) * CFrame.Angles(0, -0.8, 0)))
 
 	-----------------------------------------------------------------------
 	-- 숲: 소나무, 고목, 바위, 덤불
@@ -491,6 +535,21 @@ function MapBuilder.build(): MapInfo
 			Build.deadTree(trees, pos.X, pos.Z, rng:NextNumber(1, 1.6))
 		end
 	end
+	-- 약초 군락
+	local herbs = Instance.new("Folder")
+	herbs.Name = "HerbPatches"
+	herbs.Parent = folder
+	local herbCount = 0
+	for _ = 1, 60 do
+		local pos = randomForestPos()
+		if herbCount < 18 and isClear(pos, 0) then
+			herbCount += 1
+			addSpot("HerbPatch", Build.herbPatch(herbs, pos))
+		end
+	end
+	-- 숲길 옆 시신 하나
+	addSpot("Corpse", Build.corpse(props, CFrame.new(-60, 0, 205) * CFrame.Angles(0, 0.3, 0)))
+
 	for _ = 1, Config.Map.RockCount do
 		local pos = randomForestPos()
 		if isClear(pos, 0) then

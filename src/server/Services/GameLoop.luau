@@ -16,9 +16,11 @@ local MonsterAI = require(script.Parent.MonsterAI)
 local Monetization = require(script.Parent.Monetization)
 local Objectives = require(script.Parent.Objectives)
 local Hiding = require(script.Parent.Hiding)
+local Events = require(script.Parent.Events)
 
 local notify = Remotes.get("Notify")
 local storyEvent = Remotes.get("StoryEvent")
+local effect = Remotes.get("Effect")
 
 local GameLoop = {}
 
@@ -41,6 +43,82 @@ local function setupLeaderstats(player: Player)
 	escapes.Parent = stats
 	-- TODO: DataStore로 저장하면 다시 접속해도 기록이 남아요
 	stats.Parent = player
+	Pickups.setupStats(player)
+end
+
+---------------------------------------------------------------------------
+-- 쓰러짐 / 동료 살리기
+---------------------------------------------------------------------------
+local downedTokens: { [Player]: number } = {}
+
+local function clearDowned(player: Player)
+	downedTokens[player] = (downedTokens[player] or 0) + 1
+	player:SetAttribute("Downed", false)
+	player:SetAttribute("BleedEnds", nil)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local prompt = hrp and hrp:FindFirstChild("RevivePrompt")
+	if prompt then
+		prompt:Destroy()
+	end
+end
+
+local function revivePlayer(player: Player, by: Player?)
+	if player:GetAttribute("Downed") ~= true then
+		return
+	end
+	clearDowned(player)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum and hum.Health > 0 then
+		hum.Health = math.max(hum.Health, Config.Downed.ReviveHealth)
+	end
+	effect:FireClient(player, "Heal")
+	if by then
+		notify:FireAllClients(("%s이(가) %s을(를) 일으켜 세웠다!"):format(by.DisplayName, player.DisplayName))
+	end
+end
+
+-- 괴물에게 치명상을 입으면 바로 죽지 않고 쓰러짐
+local function downPlayer(player: Player)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not (char and hum and hum.Health > 0 and hrp) or player:GetAttribute("Downed") == true then
+		return
+	end
+	Hiding.release(player)
+	hum:UnequipTools()
+	hum.Health = math.min(hum.Health, 10)
+	downedTokens[player] = (downedTokens[player] or 0) + 1
+	local myToken = downedTokens[player]
+	player:SetAttribute("Downed", true)
+	player:SetAttribute("BleedEnds", os.time() + Config.Downed.BleedOutTime)
+	notify:FireAllClients(("%s이(가) 쓰러졌다! %d초 안에 가서 살려라"):format(player.DisplayName, Config.Downed.BleedOutTime))
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "RevivePrompt"
+	prompt.ActionText = "살리기"
+	prompt.ObjectText = player.DisplayName
+	prompt.HoldDuration = Config.Downed.ReviveHoldTime
+	prompt.MaxActivationDistance = 8
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = hrp
+	prompt.Triggered:Connect(function(helper: Player)
+		if helper == player or helper:GetAttribute("InRound") ~= true or helper:GetAttribute("Downed") == true then
+			return
+		end
+		revivePlayer(player, helper)
+	end)
+
+	task.delay(Config.Downed.BleedOutTime, function()
+		if downedTokens[player] == myToken and player:GetAttribute("Downed") == true then
+			clearDowned(player)
+			if hum.Parent then
+				hum.Health = 0
+			end
+		end
+	end)
 end
 
 local function addEscape(player: Player)
@@ -62,6 +140,7 @@ local function onEscape(player: Player, route: string)
 	addEscape(player)
 	notify:FireAllClients(("%s 탈출 성공! (%s)"):format(player.DisplayName, Story.Endings[route].title))
 	storyEvent:FireClient(player, "Ending", route)
+	clearDowned(player)
 	local char = player.Character
 	if char then
 		char:PivotTo(map.SafeRoom.CFrame + Vector3.new(0, 4, 0))
@@ -93,6 +172,7 @@ local function startRound()
 	Objectives.reset()
 	Pickups.reset()
 	MonsterAI.start()
+	Events.start()
 	Objectives.setActive(true)
 	for _, player in Players:GetPlayers() do
 		task.spawn(spawnIntoRound, player)
@@ -105,7 +185,11 @@ local function endRound(timedOut: boolean)
 	publish()
 	Objectives.setActive(false)
 	Hiding.releaseAll()
+	for _, player in Players:GetPlayers() do
+		clearDowned(player)
+	end
 	MonsterAI.stop()
+	Events.stop()
 	Pickups.clear()
 
 	local escaped = 0
@@ -122,8 +206,10 @@ local function endRound(timedOut: boolean)
 end
 
 local function onCharacterAdded(player: Player, character: Model)
+	clearDowned(player)
 	local hum = character:WaitForChild("Humanoid") :: Humanoid
 	hum.Died:Connect(function()
+		clearDowned(player)
 		if roundState == "Playing" and player:GetAttribute("InRound") == true and player:GetAttribute("Escaped") ~= true then
 			player:SetAttribute("InRound", false)
 			local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -156,6 +242,11 @@ function GameLoop.revive(player: Player): boolean
 	if roundState ~= "Playing" or player:GetAttribute("Escaped") == true then
 		return false
 	end
+	if player:GetAttribute("Downed") == true then
+		revivePlayer(player, nil)
+		notify:FireAllClients(player.DisplayName .. "이(가) 스스로 일어났다!")
+		return true
+	end
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	if hum and hum.Health > 0 and player:GetAttribute("InRound") == true then
@@ -177,6 +268,10 @@ function GameLoop.init(mapInfo)
 
 	Objectives.init(map, onEscape)
 	MonsterAI.onSealed = Objectives.onSealed
+	MonsterAI.onPlayerDowned = downPlayer
+	Players.PlayerRemoving:Connect(function(player)
+		downedTokens[player] = nil
+	end)
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	for _, player in Players:GetPlayers() do

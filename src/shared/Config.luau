@@ -101,16 +101,7 @@ Config.Hiding = {
 	BlockedRange = 12, -- 괴물이 이 거리 안에 있으면 숨을 수 없음
 }
 
--- 소리 ID (Creator Store에서 무료 사운드를 찾아 rbxassetid 숫자를 넣으세요. 0이면 소리 없음)
-Config.Sounds = {
-	Ambience = 0, -- 숲 배경음 (반복)
-	MonsterScream = 0, -- 괴물이 플레이어를 발견했을 때
-	Heartbeat = 0, -- 괴물이 가까울 때 (반복)
-	Gunshot = 0,
-	Flashbang = 0,
-	Footstep = 0, -- 괴물 발소리
-	Whisper = 0, -- 환청
-}
+-- 소리와 배경음악(BGM) ID는 src/shared/SoundList.luau 에서 바꿔요. (설명: docs/소리_넣기.md)
 
 -- 수익화: Creator Hub에서 게임패스/개발자 상품을 만든 뒤 숫자 ID를 넣으세요. 0이면 꺼짐.
 Config.Monetization = {

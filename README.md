@@ -20,7 +20,8 @@
 default.project.json        Rojo 설정 (어떤 폴더가 Studio 어디로 가는지)
 src/
   shared/                   → ReplicatedStorage.Shared (서버/클라 공용)
-    Config.luau             밸런스 숫자, 소리 ID, 수익화 ID ← 가장 자주 고칠 파일
+    Config.luau             밸런스 숫자, 수익화 ID ← 가장 자주 고칠 파일
+    SoundList.luau          소리 · 배경음악 ID 목록 (docs/소리_넣기.md)
     Story.luau              스토리, 쪽지 내용, 엔딩, 탈출 부품 위치 후보
     Items.luau              아이템 이름/색/설명
     Recipes.luau            제작법
@@ -39,15 +40,17 @@ src/
       GameLoop.luau         라운드 진행, 탈출 처리, 엔딩
       Monetization.luau     게임패스 / 개발자 상품
       Inventory.luau        인벤토리 (플레이어 Attribute)
+      Sfx.luau              서버에서 효과음 요청
   client/                   → StarterPlayerScripts.Client
     Main.client.luau        입력, 손전등, 달리기, 효과
     Hud.luau                목표 패널, 가방, 제작대, 쪽지, 인트로/엔딩
     MonsterAnimator.luau    괴물 걷기/팔 뻗기/고개 꺾기 연출
+    Audio.luau              소리 재생, 긴장/추격 BGM 연출, 괴물 3D 소리
 ```
 
 ## 다음에 해볼 만한 것
 
-- 괴물 소리, 발소리, 배경음 (Creator Store에서 사운드 ID 가져오기)
+- `src/shared/SoundList.luau` 에 소리 ID 채우기 (docs/소리_넣기.md)
 - Blender 등으로 만든 괴물 메시로 교체
 - DataStore로 탈출 기록·구매 기록 저장
 - Studio에서 맵 직접 꾸미기 (오두막, 길, 안개 낀 호수 등)

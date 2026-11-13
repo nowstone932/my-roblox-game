@@ -12,6 +12,7 @@ local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Inventory = require(script.Parent.Inventory)
 local MonsterAI = require(script.Parent.MonsterAI)
+local Sfx = require(script.Parent.Sfx)
 local Tools = require(script.Parent.Tools)
 
 local notify = Remotes.get("Notify")
@@ -96,6 +97,7 @@ handlers.Axe = function(player, char, _, _, origin, look)
 		return
 	end
 	swingAnim(char)
+	Sfx.all("AxeSwing", origin)
 	local result = raycast(char, origin, look * T.Axe.Range)
 	if result and MonsterAI.isMonsterPart(result.Instance) then
 		MonsterAI.damage(T.Axe.Damage, player)
@@ -167,6 +169,7 @@ handlers.Trap = function(player, char, _, head, _, look)
 	trap.CanCollide = false
 	trap.Parent = Workspace
 	MonsterAI.addTrap(trap)
+	Sfx.all("TrapSet", trap.Position)
 	notify:FireClient(player, "곰덫 설치!")
 end
 
@@ -241,6 +244,7 @@ local function onCraft(player: Player, recipeId: any)
 		return
 	end
 	Inventory.add(player, recipe.item, recipe.amount)
+	Sfx.to(player, "Craft")
 	local def = Items.defs[recipe.item]
 	if def.kind == "Tool" then
 		notify:FireClient(player, "제작 완료: " .. recipe.name .. " (핫바에 들어갔어요)")

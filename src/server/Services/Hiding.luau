@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local MonsterAI = require(script.Parent.MonsterAI)
+local Sfx = require(script.Parent.Sfx)
 
 local notify = Remotes.get("Notify")
 local H = Config.Hiding
@@ -34,6 +35,7 @@ function Hiding.release(player: Player, message: string?)
 	closet.prompt.ActionText = "숨기"
 	player:SetAttribute("Hiding", false)
 	player:SetAttribute("HideEnds", nil)
+	Sfx.all("ClosetDoor", exitPoint(closet).Position)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if char and hrp and hrp:IsA("BasePart") then
@@ -64,6 +66,7 @@ local function hide(player: Player, closet: ClosetState)
 	closet.token += 1
 	closet.prompt.ActionText = "나오기"
 	playerCloset[player] = closet
+	Sfx.all("ClosetDoor", exitPoint(closet).Position)
 	char:PivotTo(closet.hidePoint)
 	hrp.Anchored = true
 	player:SetAttribute("Hiding", true)

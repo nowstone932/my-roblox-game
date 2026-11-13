@@ -14,7 +14,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Inventory = require(script.Parent.Inventory)
 
 local M = Config.Monetization
-local notify = Remotes.get("Notify")
+local notify = Remotes.get("LobbyNotify") -- 구매 안내는 대기실에서도 보이게
 
 local Monetization = {}
 

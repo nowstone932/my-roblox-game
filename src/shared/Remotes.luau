@@ -11,6 +11,7 @@ local NAMES = {
 	"Effect", -- 서버 -> 클라: 시각 효과 (kind, ...)
 	"ShowNote", -- 서버 -> 클라: 쪽지 읽기 (noteId)
 	"StoryEvent", -- 서버 -> 클라: 인트로/엔딩 화면 ("Intro" | "Ending", endingId)
+	"LobbyNotify", -- 서버 -> 클라: 대기실/구매 안내 (text). Notify와 달리 대기실에서도 보임
 }
 
 local folder: Instance

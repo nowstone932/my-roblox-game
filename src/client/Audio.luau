@@ -177,6 +177,7 @@ export type Mood = {
 	chasing: boolean, -- 괴물이 쫓아오는 중인지
 	lowHealth: number, -- 0~1, 체력이 낮을수록 1
 	alive: boolean,
+	storm: boolean?, -- 3막(폭풍)인지: 긴장 음악이 깔림
 }
 
 function Audio.update(dt: number, mood: Mood)
@@ -197,6 +198,9 @@ function Audio.update(dt: number, mood: Mood)
 	local lobby = if mood.playing or muted then 0 else 1
 	local ambience = if muted then 0.2 elseif mood.playing then 1 - mood.danger * 0.4 else 0.35
 	local tension = if not mood.playing or muted or not mood.alive then 0 elseif chase then mood.danger * 0.3 else mood.danger ^ 1.2
+	if mood.storm and mood.playing and mood.alive and not muted and not chase then
+		tension = math.max(tension, 0.35)
+	end
 	local chaseVol = if chase and not muted then 1 else 0
 	local fear = if mood.playing and mood.alive then math.max(mood.danger, mood.lowHealth) else 0
 

@@ -1,5 +1,6 @@
 -- 화면 UI(HUD)를 코드로 만듭니다.
---   왼쪽 위: 목표(탈출 루트 4개 진행 상황)
+--   왼쪽 위: 목표(탈출 루트 4개 진행 상황) - 바뀔 때만 잠깐 뜨고 사라짐. [Q]로 다시 보기
+--   오른쪽 아래: 손전등 건전지
 --   왼쪽 아래: 가방 (재료, 탈출 부품)
 --   화면 아래: 핫바 (Roblox 기본 - 제작한 도구가 들어감)
 --   가운데: 제작 창(C), 쪽지, 인트로/엔딩
@@ -40,6 +41,9 @@ local staminaBar: Frame
 local downedPanel: Frame
 local downedText: TextLabel
 local whisperLabel: TextLabel
+local batteryBack: Frame
+local batteryBar: Frame
+local batteryLabel: TextLabel
 
 local FONT = Enum.Font.GothamMedium
 local STORY_FONT = Enum.Font.SpecialElite
@@ -139,12 +143,17 @@ function Hud.init(callbacks: Callbacks)
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -16, 1, -12),
 		Size = UDim2.fromOffset(420, 60),
-		Text = "[E] 줍기/사용   [C] 제작   [1~9] 도구 들기   [클릭] 도구 사용\n[F] 손전등   [Shift] 달리기",
+		Text = "[E] 줍기/사용   [C] 제작   [1~9] 도구 들기   [클릭] 도구 사용\n[F] 손전등   [R] 건전지 교체   [Shift] 달리기   [Ctrl] 웅크리기   [Q] 목표",
 		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		TextTransparency = 0.35,
 		Parent = gui,
 	})
+
+	-- 손전등 건전지
+	batteryBack = make("Frame", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -80), Size = UDim2.fromOffset(120, 6), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.5, BorderSizePixel = 0, Parent = gui })
+	batteryBar = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(230, 220, 170), BorderSizePixel = 0, Parent = batteryBack })
+	batteryLabel = label({ AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -90), Size = UDim2.fromOffset(260, 18), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Right, TextTransparency = 0.25, Parent = gui })
 
 	notifyList = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 90), Size = UDim2.fromOffset(420, 300), BackgroundTransparency = 1, Parent = gui })
 	make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 4), Parent = notifyList })
@@ -283,6 +292,8 @@ local function objectivesText(): string
 	-- 정문
 	if A("GateOpen") then
 		table.insert(lines, '<font color="#7CFF8A">정문: 열림! 북쪽 출구로</font>')
+	elseif A("GateOpening") then
+		table.insert(lines, ('<font color="#FFD84A">정문: 올라가는 중… %d초 버텨라</font>'):format(A("GateTimer") or 0))
 	else
 		table.insert(lines, ("정문: 발전기 퓨즈 %d/%d"):format(A("FusesPlaced") or 0, A("FusesRequired") or 3))
 	end
@@ -319,7 +330,12 @@ local function objectivesText(): string
 	else
 		table.insert(lines, ("봉인: 룬 조각 %d/%d → 봉인 말뚝 제작"):format(count("Rune"), Config.Escape.RunesRequired))
 	end
-	table.insert(lines, ('<font color="#AAAAAA">실종자 인식표 %d/%d</font>'):format(count("DogTag"), #Story.Loggers))
+	local tags = math.max(A("TeamDogTags") or 0, count("DogTag"))
+	if tags >= #Story.Loggers then
+		table.insert(lines, '<font color="#C08CFF">실종자 인식표 모두 거둠 — 이제 봉인하면…</font>')
+	else
+		table.insert(lines, ('<font color="#AAAAAA">실종자 인식표 %d/%d</font>'):format(tags, #Story.Loggers))
+	end
 	return table.concat(lines, "\n")
 end
 
@@ -378,12 +394,25 @@ local function refreshCraft()
 	end
 end
 
+-- 목표 패널: 내용이 바뀌면 잠깐 떴다가 사라짐. [Q]로 다시 볼 수 있음
+local objectivesShownUntil = 0
+local lastObjectives = ""
+
+function Hud.showObjectives()
+	objectivesShownUntil = os.clock() + Config.Screen.ObjectiveShowTime
+	objFrame.Visible = player:GetAttribute("InLobby") ~= true
+	task.delay(Config.Screen.ObjectiveShowTime + 0.1, function()
+		if os.clock() >= objectivesShownUntil then
+			objFrame.Visible = false
+		end
+	end)
+end
+
 function Hud.refresh()
 	local state = ReplicatedStorage:GetAttribute("RoundState") or "Intermission"
 	local timeLeft = ReplicatedStorage:GetAttribute("TimeLeft") or 0
 	local timeText = ("%d:%02d"):format(timeLeft // 60, timeLeft % 60)
 	local lobby = player:GetAttribute("InLobby") == true
-	objFrame.Visible = not lobby
 	bagFrame.Visible = not lobby
 	if lobby then
 		if craftPanel.Visible then
@@ -399,14 +428,24 @@ function Hud.refresh()
 		end
 	elseif state == "Playing" then
 		local status = if player:GetAttribute("Escaped") then "   ·   탈출 성공! 다른 사람을 기다리는 중" else ""
-		topLabel.Text = "남은 시간 " .. timeText .. status
+		topLabel.Text = "새벽까지 " .. timeText .. status
 	elseif state == "Intermission" then
 		topLabel.Text = "같이 출발한 수색대원을 기다리는 중… " .. timeText
 	else
 		topLabel.Text = "라운드 종료"
 	end
 
-	objectivesLabel.Text = objectivesText()
+	local text = objectivesText()
+	objectivesLabel.Text = text
+	if text ~= lastObjectives then
+		lastObjectives = text
+		if not lobby then
+			Hud.showObjectives()
+		end
+	end
+	if lobby then
+		objFrame.Visible = false
+	end
 	refreshBag()
 	refreshCraft()
 
@@ -568,6 +607,27 @@ end
 function Hud.setStamina(fraction: number)
 	staminaBar.Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1)
 	staminaBar.Parent.Visible = fraction < 0.999
+end
+
+-- 손전등 건전지 표시 (매 프레임 불려도 바뀔 때만 다시 그림)
+local lastBattery = -1
+local lastLightOn: boolean? = nil
+local lastCells = -1
+
+function Hud.setBattery(fraction: number, on: boolean)
+	local lobby = player:GetAttribute("InLobby") == true
+	batteryBack.Visible = not lobby
+	batteryLabel.Visible = not lobby
+	local cells = count("Cell")
+	if math.abs(fraction - lastBattery) < 0.005 and on == lastLightOn and cells == lastCells then
+		return
+	end
+	lastBattery, lastLightOn, lastCells = fraction, on, cells
+	batteryBar.Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1)
+	batteryBar.BackgroundColor3 = if fraction < Config.Flashlight.LowBattery then Color3.fromRGB(220, 80, 60) else Color3.fromRGB(230, 220, 170)
+	batteryBar.BackgroundTransparency = if on then 0 else 0.55
+	local status = if fraction <= 0 then "방전" elseif on then "켜짐" else "꺼짐"
+	batteryLabel.Text = ("손전등 %s · 건전지 x%d"):format(status, cells)
 end
 
 function Hud.setDead(dead: boolean)

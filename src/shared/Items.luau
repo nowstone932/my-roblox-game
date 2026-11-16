@@ -20,6 +20,7 @@ local Items: { [string]: ItemDef } = {
 	Gunpowder = { name = "화약", kind = "Material", color = Color3.fromRGB(70, 70, 70), desc = "캠프 창고의 화약" },
 	Cloth = { name = "천", kind = "Material", color = Color3.fromRGB(200, 190, 160), desc = "붕대로 쓸 수 있는 천" },
 	Ammo = { name = "조명탄", kind = "Material", color = Color3.fromRGB(255, 120, 40), desc = "조명탄 총 탄약" },
+	Cell = { name = "건전지", kind = "Material", color = Color3.fromRGB(225, 190, 50), desc = "손전등 건전지. 다 닳으면 저절로 갈아 끼운다 (R: 미리 교체)" },
 
 	-- 탈출 부품
 	Fuse = { name = "퓨즈", kind = "Quest", color = Color3.fromRGB(255, 200, 40), desc = "발전기에 넣으면 정문이 열린다" },
@@ -42,7 +43,7 @@ local Items: { [string]: ItemDef } = {
 -- 가방에 보여줄 순서
 local order = {
 	"Fuse", "Battery", "FuelCan", "CarKey", "Antenna", "Rune", "DogTag",
-	"Scrap", "Wood", "Herb", "Gunpowder", "Cloth", "Ammo",
+	"Cell", "Scrap", "Wood", "Herb", "Gunpowder", "Cloth", "Ammo",
 	"FlareGun", "Axe", "Flashbang", "Trap", "Medkit", "SealStake",
 }
 

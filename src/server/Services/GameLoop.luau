@@ -13,6 +13,8 @@
 --   InRound  : 지금 살아서 숲을 돌아다니는 중
 --
 -- 플레이 중: 4가지 탈출 방법 중 아무거나로 탈출하면 성공 (Objectives.luau 참고)
+-- 밤은 3막으로 흘러갑니다 (Director.luau). 남은 시간이 Config.Round.FinaleTime 이하가 되면 3막(폭풍).
+-- 인식표 7개를 팀이 모두 거둔 뒤 봉인하면 진엔딩(TrueSeal).
 -- 죽으면 그 라운드는 살아있는 동료를 관전 (부활 상품으로 되살아날 수 있음). 들고 있던 탈출 부품은 떨어짐.
 -- 라운드는 모두 죽거나 탈출해야(또는 시간이 다 되어야) 끝남. 한 명이 죽어도 계속됨.
 
@@ -29,7 +31,7 @@ local MonsterAI = require(script.Parent.MonsterAI)
 local Monetization = require(script.Parent.Monetization)
 local Objectives = require(script.Parent.Objectives)
 local Hiding = require(script.Parent.Hiding)
-local Events = require(script.Parent.Events)
+local Director = require(script.Parent.Director)
 
 local notify = Remotes.get("Notify")
 local storyEvent = Remotes.get("StoryEvent")
@@ -155,10 +157,24 @@ local function addEscape(player: Player)
 	end
 end
 
+-- 팀이 거둔 인식표 수 (죽은 사람이 갖고 있던 것도 셈)
+local function teamDogTags(): number
+	local total = 0
+	for player in matchPlayers do
+		if player.Parent == Players then
+			total += Inventory.get(player, "DogTag")
+		end
+	end
+	return total
+end
+
 -- 탈출 처리 (Objectives가 부름)
 local function onEscape(player: Player, route: string)
 	if roundState ~= "Playing" or player:GetAttribute("Escaped") == true then
 		return
+	end
+	if route == "Seal" and teamDogTags() >= #Story.Loggers then
+		route = "TrueSeal" -- 일곱 명의 이름을 모두 거두고 봉인 → 진엔딩
 	end
 	Hiding.release(player)
 	player:SetAttribute("Escaped", true)
@@ -247,7 +263,7 @@ local function beginRound(players: { Player })
 	Objectives.reset()
 	Pickups.reset()
 	MonsterAI.start()
-	Events.start()
+	Director.start()
 	Objectives.setActive(true)
 	for _, player in players do
 		if player.Parent == Players then
@@ -269,7 +285,7 @@ local function endRound(timedOut: boolean)
 		clearDowned(player)
 	end
 	MonsterAI.stop()
-	Events.stop()
+	Director.stop()
 	Pickups.clear()
 
 	local escaped = 0
@@ -294,6 +310,9 @@ local function playRound()
 	local t = Config.Round.RoundTime
 	while t > 0 and #activePlayers() > 0 do
 		setTimeLeft(t)
+		if t <= Config.Round.FinaleTime then
+			Director.triggerFinale() -- 새벽이 가까워지면 폭풍이 몰아침
+		end
 		task.wait(1)
 		t -= 1
 	end
@@ -428,6 +447,13 @@ function GameLoop.init(mapInfo, options: { matchServer: boolean, lobbySpawn: CFr
 	game:GetService("StarterPlayer").EnableMouseLockOption = false -- 쉬프트락 끄기
 
 	Objectives.init(map, onEscape)
+	Director.init(map)
+	ReplicatedStorage:SetAttribute("TeamDogTags", 0)
+	Inventory.onChanged(function(_, key)
+		if key == "DogTag" then
+			ReplicatedStorage:SetAttribute("TeamDogTags", teamDogTags())
+		end
+	end)
 	MonsterAI.onSealed = Objectives.onSealed
 	MonsterAI.onPlayerDowned = downPlayer
 	Players.PlayerRemoving:Connect(function(player)

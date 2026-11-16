@@ -2,6 +2,11 @@
 -- MapBuilder가 이 함수들로 맵을 조립합니다.
 -- 위치는 CFrame으로 받고, 소품의 "앞"은 CFrame의 LookVector(-Z) 방향입니다.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Assets = require(ReplicatedStorage.Shared.Assets)
+
 local Build = {}
 
 Build.rng = Random.new()
@@ -16,8 +21,17 @@ local Colors = {
 	Stone = Color3.fromRGB(80, 82, 80),
 	Leaves = Color3.fromRGB(18, 34, 22),
 	Bark = Color3.fromRGB(42, 30, 22),
+	Straw = Color3.fromRGB(150, 128, 78),
+	Bone = Color3.fromRGB(200, 192, 172),
 }
 Build.Colors = Colors
+
+local UP = CFrame.Angles(0, 0, math.rad(90)) -- 원기둥(축이 X)을 세울 때 곱함
+local CYL = Enum.PartType.Cylinder
+local BALL = Enum.PartType.Ball
+-- 장식: 부딪히지 않음 / 장식+: 부딪히지도 않고 레이(시야, 총알)도 통과
+local DECOR = { CanCollide = false, CanTouch = false }
+local GHOST = { CanCollide = false, CanTouch = false, CanQuery = false }
 
 -- 기본 파트 생성. props에 Shape가 있으면 먼저 적용하고, Parent는 마지막에 넣습니다.
 function Build.part(
@@ -71,6 +85,51 @@ function Build.light(parent: BasePart, color: Color3, range: number, brightness:
 	return light
 end
 
+-- ReplicatedStorage.Assets.Props 에 같은 이름의 모델이 있으면 그걸 세움 (높이에 맞춰 크기 조절).
+-- 없으면 false → 파트로 직접 만듦
+local assetMissing: { [string]: boolean } = {}
+local function placeAsset(parent: Instance, name: string, cf: CFrame, height: number): boolean
+	if assetMissing[name] then
+		return false
+	end
+	local model = Assets.clone("Props", name)
+	if not model then
+		assetMissing[name] = true
+		return false
+	end
+	local size = model:GetExtentsSize()
+	if size.Y > 0.01 then
+		model:ScaleTo(model:GetScale() * height / size.Y)
+	end
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanTouch = false
+		end
+	end
+	local boxCf, boxSize = model:GetBoundingBox()
+	local bottom = boxCf.Position - Vector3.new(0, boxSize.Y / 2, 0)
+	model:PivotTo(cf * CFrame.new(model:GetPivot().Position - bottom))
+	model.Parent = parent
+	return true
+end
+
+---------------------------------------------------------------------------
+-- 지형 (진짜 Roblox Terrain: 풀, 흙, 바위 질감이 실제처럼 보임)
+---------------------------------------------------------------------------
+
+-- 땅 표면(높이 0)에 material 을 depth 만큼 깔기. cf 의 Y 는 무시됨
+function Build.ground(cf: CFrame, sizeX: number, sizeZ: number, material: Enum.Material, depth: number?)
+	local d = depth or 4
+	local flat = CFrame.new(cf.Position.X, -d / 2, cf.Position.Z) * (cf - cf.Position)
+	Workspace.Terrain:FillBlock(flat, Vector3.new(sizeX, d, sizeZ), material)
+end
+
+-- 땅에 반쯤 묻힌 바위
+function Build.boulder(pos: Vector3, radius: number, material: Enum.Material?)
+	Workspace.Terrain:FillBall(Vector3.new(pos.X, radius * 0.2, pos.Z), radius, material or Enum.Material.Rock)
+end
+
 -- 표지판 글씨
 function Build.text(part: BasePart, face: Enum.NormalId, text: string, color: Color3?)
 	local gui = Instance.new("SurfaceGui")
@@ -93,54 +152,101 @@ end
 -- 자연물
 ---------------------------------------------------------------------------
 
--- 각진 소나무: 줄기 + 웨지 4개로 만든 피라미드 2~3단
-function Build.pine(parent: Instance, x: number, z: number, scale: number)
+-- 소나무: 아래쪽은 맨 줄기, 위쪽은 아래로 처진 가지가 층층이 달림
+-- simple = true 면 가지 수를 줄인 가벼운 버전 (숲 가장자리용)
+function Build.pine(parent: Instance, x: number, z: number, scale: number, simple: boolean?)
 	local rng = Build.rng
-	local height = 26 * scale
-	local trunkW = 2.4 * scale
-	Build.part(parent, Vector3.new(trunkW, height, trunkW), CFrame.new(x, height / 2, z), Colors.Bark, Enum.Material.Wood)
+	local height = 34 * scale
+	local yaw = rng:NextNumber(0, 6.28)
+	if placeAsset(parent, "Pine", CFrame.new(x, 0, z) * CFrame.Angles(0, yaw, 0), height) then
+		return
+	end
+	local base = CFrame.new(x, 0, z) * CFrame.Angles(math.rad(rng:NextNumber(-2.5, 2.5)), yaw, math.rad(rng:NextNumber(-2.5, 2.5)))
+	local d = 1.6 * scale + 0.8
+	local bark = Colors.Bark:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.25))
+	Build.part(parent, Vector3.new(height * 0.72, d, d), base * CFrame.new(0, height * 0.36, 0) * UP, bark, Enum.Material.Wood, { Shape = CYL })
+	Build.part(parent, Vector3.new(height * 0.3, d * 0.55, d * 0.55), base * CFrame.new(0, height * 0.84, 0) * UP, bark, Enum.Material.Wood, {
+		Shape = CYL,
+		CanCollide = false,
+		CanTouch = false,
+		CanQuery = false,
+	})
 
-	local tiers = 3
-	for i = 1, tiers do
-		local w = (16 - i * 3.5) * scale
-		local h = 9 * scale
-		local y = height * 0.35 + (i - 1) * h * 0.7 + h / 2
-		local center = Vector3.new(x, y, z)
-		local turn = rng:NextNumber(0, math.pi / 2)
-		for k = 0, 3 do
-			local angle = turn + k * math.pi / 2
-			local dir = Vector3.new(math.cos(angle), 0, math.sin(angle))
-			local pos = center + dir * (w / 4)
+	local counts = if simple then { 5, 4, 4 } else { 6, 5, 5, 4, 4 }
+	local tiers = #counts
+	for i, n in counts do
+		local t = (i - 1) / (tiers - 1)
+		local y = height * (0.4 + 0.52 * t)
+		local reach = (10 - 6.5 * t) * scale
+		local thick = (2.4 - 1.1 * t) * scale
+		local width = 2 * reach * math.tan(math.pi / n) * 0.7
+		local turn = rng:NextNumber(0, 6.28)
+		for k = 1, n do
+			local a = turn + (k / n) * math.pi * 2 + rng:NextNumber(-0.2, 0.2)
+			local droop = math.rad(rng:NextNumber(14, 30))
+			local len = reach * rng:NextNumber(0.8, 1.1)
+			-- 웨지: 두꺼운 쪽이 줄기, 얇은 끝이 바깥 아래를 향함
 			Build.part(
 				parent,
-				Vector3.new(w, h, w / 2),
-				CFrame.lookAt(pos, pos + dir),
-				Colors.Leaves:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.3)),
+				Vector3.new(width, thick, len),
+				base * CFrame.new(0, y, 0) * CFrame.Angles(0, a, 0) * CFrame.Angles(-droop, 0, 0) * CFrame.new(0, 0, -len / 2),
+				Colors.Leaves:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.35)),
 				Enum.Material.Grass,
-				{ CanCollide = false, CastShadow = true },
+				{ CanCollide = false, CanTouch = false, CanQuery = false, CastShadow = not simple },
 				"WedgePart"
 			)
 		end
 	end
-end
 
--- 말라 죽은 나무 (가지가 뻗은 회색 나무)
-function Build.deadTree(parent: Instance, x: number, z: number, scale: number)
-	local rng = Build.rng
-	local height = 22 * scale
-	local color = Color3.fromRGB(58, 52, 48)
-	local lean = CFrame.Angles(math.rad(rng:NextNumber(-6, 6)), rng:NextNumber(0, 6.28), math.rad(rng:NextNumber(-6, 6)))
-	local base = CFrame.new(x, 0, z) * lean
-	Build.part(parent, Vector3.new(2 * scale, height, 2 * scale), base * CFrame.new(0, height / 2, 0), color, Enum.Material.Wood)
-	for _ = 1, rng:NextInteger(2, 4) do
-		local len = rng:NextNumber(6, 11) * scale
-		local at = base
-			* CFrame.new(0, rng:NextNumber(height * 0.45, height * 0.9), 0)
-			* CFrame.Angles(0, rng:NextNumber(0, 6.28), math.rad(rng:NextNumber(35, 70)))
-		Build.part(parent, Vector3.new(0.7 * scale, len, 0.7 * scale), at * CFrame.new(0, len / 2, 0), color, Enum.Material.Wood, { CanCollide = false })
+	-- 아래쪽 줄기에 남은 죽은 가지 몇 개
+	if not simple then
+		for _ = 1, rng:NextInteger(0, 3) do
+			local len = rng:NextNumber(2, 5) * scale
+			local at = base
+				* CFrame.new(0, rng:NextNumber(height * 0.12, height * 0.36), 0)
+				* CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
+				* CFrame.Angles(math.rad(rng:NextNumber(-15, 25)), 0, 0)
+			Build.part(parent, Vector3.new(0.35 * scale, 0.35 * scale, len), at * CFrame.new(0, 0, -len / 2 - d * 0.4), bark, Enum.Material.Wood, GHOST)
+		end
 	end
 end
 
+-- 가지 하나 (at 의 +Y 방향으로 뻗음)
+local function limb(parent: Instance, at: CFrame, len: number, dia: number, color: Color3, collide: boolean?)
+	Build.part(parent, Vector3.new(len, dia, dia), at * CFrame.new(0, len / 2, 0) * UP, color, Enum.Material.Wood, {
+		Shape = CYL,
+		CanCollide = collide == true,
+		CanTouch = false,
+	})
+end
+
+-- 말라 죽은 나무 (앙상한 가지가 갈라져 뻗은 회색 나무)
+function Build.deadTree(parent: Instance, x: number, z: number, scale: number)
+	local rng = Build.rng
+	local height = 22 * scale
+	local yaw = rng:NextNumber(0, 6.28)
+	if placeAsset(parent, "DeadTree", CFrame.new(x, 0, z) * CFrame.Angles(0, yaw, 0), height) then
+		return
+	end
+	local color = Color3.fromRGB(54, 49, 45):Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.25))
+	local base = CFrame.new(x, 0, z) * CFrame.Angles(math.rad(rng:NextNumber(-6, 6)), yaw, math.rad(rng:NextNumber(-6, 6)))
+	local d = 1.9 * scale
+	limb(parent, base, height * 0.6, d, color, true)
+	local top = base * CFrame.new(0, height * 0.58, 0) * CFrame.Angles(math.rad(rng:NextNumber(-10, 10)), 0, math.rad(rng:NextNumber(-10, 10)))
+	limb(parent, top, height * 0.42, d * 0.6, color)
+	for _ = 1, rng:NextInteger(3, 5) do
+		local len = rng:NextNumber(6, 11) * scale
+		local at = base
+			* CFrame.new(0, rng:NextNumber(height * 0.4, height * 0.9), 0)
+			* CFrame.Angles(0, rng:NextNumber(0, 6.28), math.rad(rng:NextNumber(35, 75)))
+		limb(parent, at, len, 0.6 * scale, color)
+		-- 잔가지
+		local twig = at * CFrame.new(0, len * rng:NextNumber(0.45, 0.75), 0) * CFrame.Angles(0, rng:NextNumber(0, 6.28), math.rad(rng:NextNumber(30, 65)))
+		limb(parent, twig, len * rng:NextNumber(0.35, 0.6), 0.32 * scale, color)
+	end
+end
+
+-- 돌 (돌무덤용. 숲의 큰 바위는 Build.boulder 로 지형에 만듦)
 function Build.rock(parent: Instance, pos: Vector3, size: number)
 	local rng = Build.rng
 	Build.part(
@@ -152,11 +258,101 @@ function Build.rock(parent: Instance, pos: Vector3, size: number)
 	)
 end
 
+-- 덤불: 크기가 다른 공 몇 개가 뭉친 모양. 뒤에 숨으면 괴물 시야가 가려짐
 function Build.bush(parent: Instance, pos: Vector3, size: number)
-	Build.part(parent, Vector3.one * size, CFrame.new(pos + Vector3.new(0, size * 0.3, 0)), Color3.fromRGB(20, 40, 22), Enum.Material.Grass, {
-		Shape = Enum.PartType.Ball,
+	local rng = Build.rng
+	if placeAsset(parent, "Bush", CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), size) then
+		return
+	end
+	local color = Color3.fromRGB(20, 38, 22):Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.3))
+	for i = 1, 3 do
+		local s = size * (if i == 1 then 1 else rng:NextNumber(0.5, 0.8))
+		local offset = if i == 1 then Vector3.zero else Vector3.new(rng:NextNumber(-0.5, 0.5) * size, 0, rng:NextNumber(-0.5, 0.5) * size)
+		Build.part(parent, Vector3.one * s, CFrame.new(pos + offset + Vector3.new(0, s * 0.28, 0)), color, Enum.Material.Grass, {
+			Shape = BALL,
+			CanCollide = false,
+			CanTouch = false,
+		})
+	end
+end
+
+-- 그루터기 (베어낸 나무 밑동)
+function Build.stump(parent: Instance, pos: Vector3, scale: number)
+	local rng = Build.rng
+	local d = rng:NextNumber(2.4, 4) * scale
+	local h = rng:NextNumber(1.1, 2.4)
+	if placeAsset(parent, "Stump", CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), h) then
+		return
+	end
+	local cf = CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0)
+	Build.part(parent, Vector3.new(h, d, d), cf * CFrame.new(0, h / 2, 0) * UP, Colors.Bark, Enum.Material.Wood, { Shape = CYL })
+	-- 잘린 면 (밝은 속살)
+	Build.part(parent, Vector3.new(0.12, d * 0.9, d * 0.9), cf * CFrame.new(0, h + 0.03, 0) * UP, Color3.fromRGB(118, 92, 62), Enum.Material.Wood, {
+		Shape = CYL,
 		CanCollide = false,
+		CanTouch = false,
+		CanQuery = false,
 	})
+	-- 뿌리
+	for k = 0, 2 do
+		local a = k * 2.1 + rng:NextNumber(-0.4, 0.4)
+		Build.part(
+			parent,
+			Vector3.new(d * 0.35, h * 0.6, d * 0.7),
+			cf * CFrame.Angles(0, a, 0) * CFrame.new(0, h * 0.3, -d * 0.6),
+			Colors.Bark,
+			Enum.Material.Wood,
+			GHOST,
+			"WedgePart"
+		)
+	end
+end
+
+-- 쓰러진 통나무 (이끼가 낌)
+function Build.fallenLog(parent: Instance, pos: Vector3)
+	local rng = Build.rng
+	local len = rng:NextNumber(12, 22)
+	local d = rng:NextNumber(1.8, 3)
+	local cf = CFrame.new(pos + Vector3.new(0, d / 2 - 0.25, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), math.rad(rng:NextNumber(-3, 3)))
+	Build.part(parent, Vector3.new(len, d, d), cf, Colors.Bark:Lerp(Color3.new(0, 0, 0), 0.15), Enum.Material.Wood, { Shape = CYL })
+	Build.part(parent, Vector3.new(len * rng:NextNumber(0.4, 0.7), 0.25, d * 0.7), cf * CFrame.new(rng:NextNumber(-2, 2), d / 2 - 0.05, 0), Color3.fromRGB(34, 52, 30), Enum.Material.Grass, GHOST)
+	-- 부러진 가지 그루
+	for _ = 1, rng:NextInteger(1, 3) do
+		local at = cf * CFrame.new(rng:NextNumber(-len / 2 + 1, len / 2 - 1), 0, 0) * CFrame.Angles(rng:NextNumber(-1.2, 1.2), 0, 0)
+		limb(parent, at, rng:NextNumber(2, 4.5), 0.4, Colors.Bark)
+	end
+end
+
+-- 바닥에 깔리는 옅은 안개 (손전등 불빛에 비쳐 보임)
+function Build.fogBank(parent: Instance, pos: Vector3, radius: number)
+	local holder = Build.part(parent, Vector3.new(radius * 2, 1.5, radius * 2), CFrame.new(pos + Vector3.new(0, 1.6, 0)), Color3.new(), nil, {
+		Transparency = 1,
+		CanCollide = false,
+		CanTouch = false,
+		CanQuery = false,
+		CastShadow = false,
+		Name = "FogBank",
+	})
+	local fog = Instance.new("ParticleEmitter")
+	fog.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	fog.Color = ColorSequence.new(Color3.fromRGB(120, 130, 145))
+	fog.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 9), NumberSequenceKeypoint.new(1, 17) })
+	fog.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.3, 0.88),
+		NumberSequenceKeypoint.new(0.7, 0.9),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	fog.Lifetime = NumberRange.new(9, 14)
+	fog.Rate = 2.5
+	fog.Speed = NumberRange.new(0.2, 0.9)
+	fog.SpreadAngle = Vector2.new(80, 80)
+	fog.Rotation = NumberRange.new(0, 360)
+	fog.RotSpeed = NumberRange.new(-6, 6)
+	fog.Acceleration = Vector3.new(0.25, 0, 0.15)
+	fog.LightInfluence = 1
+	fog.LightEmission = 0
+	fog.Parent = holder
 end
 
 ---------------------------------------------------------------------------
@@ -190,11 +386,15 @@ function Build.logPile(parent: Instance, cf: CFrame)
 	end
 end
 
--- 깜빡이는 랜턴 기둥
+-- 깜빡이는 석유등 기둥 (기둥 + 팔 + 매달린 등)
 function Build.lanternPost(parent: Instance, cf: CFrame)
-	Build.part(parent, Vector3.new(0.6, 8, 0.6), cf * CFrame.new(0, 4, 0), Colors.DarkWood, Enum.Material.Wood)
-	local lamp = Build.part(parent, Vector3.new(1, 1.4, 1), cf * CFrame.new(0, 8.4, 0), Color3.fromRGB(255, 170, 80), Enum.Material.Neon)
-	Build.light(lamp, Color3.fromRGB(255, 150, 70), 22, 1.4, true)
+	Build.part(parent, Vector3.new(0.55, 9, 0.55), cf * CFrame.new(0, 4.5, 0), Colors.DarkWood, Enum.Material.Wood)
+	Build.part(parent, Vector3.new(0.3, 0.3, 2.2), cf * CFrame.new(0, 8.6, -0.9), Colors.DarkWood, Enum.Material.Wood, DECOR)
+	Build.part(parent, Vector3.new(0.08, 0.7, 0.08), cf * CFrame.new(0, 8.2, -1.8), Colors.Metal, Enum.Material.Metal, GHOST)
+	Build.part(parent, Vector3.new(0.9, 0.18, 0.9), cf * CFrame.new(0, 7.85, -1.8), Color3.fromRGB(45, 45, 48), Enum.Material.Metal, GHOST)
+	Build.part(parent, Vector3.new(0.8, 0.18, 0.8), cf * CFrame.new(0, 6.75, -1.8), Color3.fromRGB(45, 45, 48), Enum.Material.Metal, GHOST)
+	local lamp = Build.part(parent, Vector3.new(0.55, 0.95, 0.55), cf * CFrame.new(0, 7.3, -1.8), Color3.fromRGB(255, 170, 80), Enum.Material.Neon, GHOST)
+	Build.light(lamp, Color3.fromRGB(255, 150, 70), 24, 1.3, true)
 end
 
 function Build.sign(parent: Instance, cf: CFrame, text: string)
@@ -295,8 +495,45 @@ function Build.cabin(parent: Instance, cf: CFrame, name: string): (Model, { [str
 	Build.part(m, Vector3.new(4, 1.5, 8), cf * CFrame.new(7, 1.75, 3), Color3.fromRGB(70, 60, 55), Enum.Material.Fabric) -- 침대
 	Build.crate(m, cf * CFrame.new(-7, 1, -5), 2.5)
 
-	local lamp = Build.part(m, Vector3.new(0.8, 1, 0.8), cf * CFrame.new(-4, 4.75, 3), Color3.fromRGB(255, 170, 80), Enum.Material.Neon)
-	Build.light(lamp, Color3.fromRGB(255, 140, 60), 16, 1, true)
+	-- 탁자 위 석유등
+	Build.part(m, Vector3.new(0.7, 0.25, 0.7), cf * CFrame.new(-4, 4.38, 3), Color3.fromRGB(45, 45, 48), Enum.Material.Metal, GHOST)
+	Build.part(m, Vector3.new(0.6, 0.2, 0.6), cf * CFrame.new(-4, 5.3, 3), Color3.fromRGB(45, 45, 48), Enum.Material.Metal, GHOST)
+	local lamp = Build.part(m, Vector3.new(0.45, 0.75, 0.45), cf * CFrame.new(-4, 4.85, 3), Color3.fromRGB(255, 170, 80), Enum.Material.Neon, GHOST)
+	Build.light(lamp, Color3.fromRGB(255, 140, 60), 18, 1, true)
+
+	-- 창살(십자 나무살). 절반쯤은 누군가 바깥에서 판자로 막아놨음
+	for _, side in { -1, 1 } do
+		local x = side * (w / 2)
+		Build.part(m, Vector3.new(0.3, 3.5, 0.3), cf * CFrame.new(x, 6.75, 0), Colors.DarkWood, Enum.Material.Wood, GHOST)
+		Build.part(m, Vector3.new(0.3, 0.3, 6), cf * CFrame.new(x, 6.75, 0), Colors.DarkWood, Enum.Material.Wood, GHOST)
+		if Build.rng:NextNumber() < 0.5 then
+			for _, y in { 5.8, 7.5 } do
+				Build.part(
+					m,
+					Vector3.new(0.25, 0.9, 6.8),
+					cf * CFrame.new(x + side * 0.65, y, 0) * CFrame.Angles(math.rad(Build.rng:NextNumber(-7, 7)), 0, 0),
+					Colors.Plank:Lerp(Color3.new(0, 0, 0), 0.25),
+					Enum.Material.WoodPlanks,
+					DECOR
+				)
+			end
+		end
+	end
+	-- 굴뚝 + 무쇠 난로
+	Build.part(m, Vector3.new(2.4, h + 7, 2.2), cf * CFrame.new(3.3, (h + 7) / 2, d / 2 + 1.6), Color3.fromRGB(86, 52, 44), Enum.Material.Brick)
+	Build.part(m, Vector3.new(2, 2.6, 1.7), cf * CFrame.new(3.3, 2.3, d / 2 - 1.4), Color3.fromRGB(32, 32, 34), Enum.Material.CorrodedMetal)
+	Build.part(m, Vector3.new(1.2, 0.9, 0.1), cf * CFrame.new(3.3, 2.1, d / 2 - 2.3), Color3.fromRGB(20, 20, 22), Enum.Material.Metal, GHOST)
+	Build.part(m, Vector3.new(h - 3, 0.6, 0.6), cf * CFrame.new(3.3, 3.6 + (h - 3) / 2, d / 2 - 1.2) * UP, Color3.fromRGB(38, 38, 40), Enum.Material.CorrodedMetal, {
+		Shape = CYL,
+		CanCollide = false,
+		CanTouch = false,
+		CanQuery = false,
+	})
+	-- 넘어진 의자, 벽 달력
+	Build.part(m, Vector3.new(1.6, 0.25, 1.6), cf * CFrame.new(-1.2, 1.9, -1.5) * CFrame.Angles(0, 0.5, math.rad(78)), Colors.DarkWood, Enum.Material.Wood, GHOST)
+	Build.part(m, Vector3.new(1.6, 2.6, 0.25), cf * CFrame.new(-1.9, 1.5, -1.9) * CFrame.Angles(0, 0.5, math.rad(78)), Colors.DarkWood, Enum.Material.Wood, GHOST)
+	local calendar = Build.part(m, Vector3.new(1.7, 2.2, 0.06), cf * CFrame.new(-8, 6.6, d / 2 - 0.56), Color3.fromRGB(215, 205, 180), Enum.Material.Fabric, GHOST)
+	Build.text(calendar, Enum.NormalId.Front, "1998\n10월", Color3.fromRGB(120, 25, 20))
 
 	local closetCf = cf * CFrame.new(5, 1, -4) * CFrame.Angles(0, math.rad(90), 0) -- 문이 방 안쪽을 보게
 
@@ -420,15 +657,15 @@ function Build.fence(parent: Instance, from: Vector3, to: Vector3, height: numbe
 	end
 end
 
--- 흙길
-function Build.road(parent: Instance, from: Vector3, to: Vector3, width: number)
-	local a = Vector3.new(from.X, 0.06, from.Z)
-	local b = Vector3.new(to.X, 0.06, to.Z)
+-- 흙길 (지형에 흙을 깖)
+function Build.road(_parent: Instance?, from: Vector3, to: Vector3, width: number)
+	local a = Vector3.new(from.X, 0, from.Z)
+	local b = Vector3.new(to.X, 0, to.Z)
 	local len = (b - a).Magnitude
-	Build.part(parent, Vector3.new(width, 0.12, len + width * 0.5), CFrame.lookAt((a + b) / 2, b), Color3.fromRGB(62, 48, 36), Enum.Material.Ground, {
-		CanCollide = false,
-		CanQuery = false,
-	})
+	if len < 0.5 then
+		return
+	end
+	Build.ground(CFrame.lookAt((a + b) / 2, b), width, len + width * 0.5, Enum.Material.Ground)
 end
 
 -- 벽에 붙은 전기함 (문이 열려 있음). cf의 앞(-Z)이 바깥쪽. 안쪽 바닥 위치를 돌려줌
@@ -548,6 +785,151 @@ function Build.corpse(parent: Instance, cf: CFrame): Vector3
 		})
 	end
 	return (cf * CFrame.new(1.6, 0.06, -2.2)).Position
+end
+
+---------------------------------------------------------------------------
+-- 서낭당 / 장승 / 금줄 / 솟대 / 허수아비 (강원도 산골 느낌)
+---------------------------------------------------------------------------
+
+-- 세로로 쓴 글씨판
+local function verticalText(parent: Instance, cf: CFrame, text: string, color: Color3)
+	local chars = {}
+	for _, code in utf8.codes(text) do
+		table.insert(chars, utf8.char(code))
+	end
+	local board = Build.part(parent, Vector3.new(1.1, #chars * 1.1, 0.06), cf, Color3.new(), nil, {
+		Transparency = 1,
+		CanCollide = false,
+		CanTouch = false,
+		CanQuery = false,
+		CastShadow = false,
+	})
+	Build.text(board, Enum.NormalId.Front, table.concat(chars, "\n"), color)
+end
+
+-- 장승: 얼굴을 새긴 나무 기둥. 앞 = LookVector
+function Build.jangseung(parent: Instance, cf: CFrame, text: string)
+	local wood = Color3.fromRGB(70, 52, 38)
+	local h = 11
+	Build.part(parent, Vector3.new(h, 1.7, 1.7), cf * CFrame.new(0, h / 2, 0) * UP, wood, Enum.Material.Wood, { Shape = CYL })
+	Build.part(parent, Vector3.new(2.3, 0.7, 2.3), cf * CFrame.new(0, h + 0.2, 0), Colors.DarkWood, Enum.Material.Wood, DECOR) -- 갓
+	Build.part(parent, Vector3.new(1.3, 1.1, 1.3), cf * CFrame.new(0, h + 1, 0), Colors.DarkWood, Enum.Material.Wood, DECOR)
+	-- 부릅뜬 눈, 긴 코, 이를 드러낸 입
+	for _, side in { -1, 1 } do
+		Build.part(parent, Vector3.new(0.75, 0.22, 0.3), cf * CFrame.new(side * 0.42, 9.75, -0.8) * CFrame.Angles(0, 0, side * math.rad(-22)), Colors.DarkWood, Enum.Material.Wood, GHOST)
+		Build.part(parent, Vector3.one * 0.5, cf * CFrame.new(side * 0.4, 9.3, -0.72), Color3.fromRGB(205, 200, 185), Enum.Material.SmoothPlastic, { Shape = BALL, CanCollide = false, CanTouch = false, CanQuery = false })
+		Build.part(parent, Vector3.one * 0.22, cf * CFrame.new(side * 0.4, 9.3, -0.95), Color3.new(0, 0, 0), Enum.Material.SmoothPlastic, { Shape = BALL, CanCollide = false, CanTouch = false, CanQuery = false })
+	end
+	Build.part(parent, Vector3.new(0.35, 1.3, 0.45), cf * CFrame.new(0, 8.75, -0.95), wood:Lerp(Color3.new(0, 0, 0), 0.2), Enum.Material.Wood, GHOST)
+	Build.part(parent, Vector3.new(1.15, 0.5, 0.2), cf * CFrame.new(0, 7.75, -0.8), Color3.fromRGB(15, 10, 8), Enum.Material.SmoothPlastic, GHOST)
+	for i = -2, 2 do
+		Build.part(parent, Vector3.new(0.17, 0.3, 0.1), cf * CFrame.new(i * 0.21, 7.85, -0.88), Color3.fromRGB(205, 200, 185), Enum.Material.SmoothPlastic, GHOST)
+	end
+	verticalText(parent, cf * CFrame.new(0, 4, -0.9), text, Color3.fromRGB(25, 18, 14))
+end
+
+-- 솟대: 긴 장대 끝에 나무 새
+function Build.sotdae(parent: Instance, cf: CFrame)
+	local h = Build.rng:NextNumber(13, 17)
+	Build.part(parent, Vector3.new(h, 0.4, 0.4), cf * CFrame.new(0, h / 2, 0) * UP, Colors.DarkWood, Enum.Material.Wood, { Shape = CYL })
+	Build.part(parent, Vector3.new(0.45, 0.5, 1.7), cf * CFrame.new(0, h + 0.2, 0) * CFrame.Angles(math.rad(8), 0, 0), Colors.Wood, Enum.Material.Wood, GHOST)
+	Build.part(parent, Vector3.new(0.3, 0.9, 0.35), cf * CFrame.new(0, h + 0.75, -0.75) * CFrame.Angles(math.rad(-25), 0, 0), Colors.Wood, Enum.Material.Wood, GHOST)
+	Build.part(parent, Vector3.new(0.18, 0.18, 0.6), cf * CFrame.new(0, h + 1.1, -1.15), Colors.DarkWood, Enum.Material.Wood, GHOST)
+end
+
+-- 금줄: 두 기둥 사이에 친 새끼줄 + 흰 종이. 아래로 지나갈 수 있음
+function Build.geumjul(parent: Instance, from: Vector3, to: Vector3, noPosts: boolean?)
+	local rng = Build.rng
+	local a = Vector3.new(from.X, 6.2, from.Z)
+	local b = Vector3.new(to.X, 6.2, to.Z)
+	local len = (b - a).Magnitude
+	local cf = CFrame.lookAt((a + b) / 2, b)
+	if not noPosts then
+		for _, p in { from, to } do
+			Build.part(parent, Vector3.new(7, 0.6, 0.6), CFrame.new(p.X, 3.5, p.Z) * UP, Colors.Bark, Enum.Material.Wood, { Shape = CYL })
+		end
+	end
+	Build.part(parent, Vector3.new(0.14, 0.14, len), cf, Colors.Straw, Enum.Material.Fabric, GHOST)
+	local n = math.max(2, math.floor(len / 1.6))
+	for i = 1, n - 1 do
+		local z = -len / 2 + (i / n) * len
+		local hLen = rng:NextNumber(0.9, 1.6)
+		local color = if i % 4 == 0 then Color3.fromRGB(120, 30, 25) else Color3.fromRGB(215, 210, 195)
+		Build.part(parent, Vector3.new(0.04, hLen, 0.35), cf * CFrame.new(0, -hLen / 2, z) * CFrame.Angles(0, rng:NextNumber(-0.5, 0.5), 0), color, Enum.Material.Fabric, GHOST)
+	end
+end
+
+-- 허수아비(제웅): 숲에 세워둔 짚 인형. 어둠 속에서는 사람처럼 보임. antlers = true 면 나뭇가지 뿔
+function Build.effigy(parent: Instance, cf: CFrame, antlers: boolean?)
+	local rng = Build.rng
+	local rag = Color3.fromRGB(58, 52, 46)
+	Build.part(parent, Vector3.new(0.4, 8.4, 0.4), cf * CFrame.new(0, 4.2, 0), Colors.DarkWood, Enum.Material.Wood)
+	Build.part(parent, Vector3.new(5.4, 0.35, 0.35), cf * CFrame.new(0, 6.3, 0) * CFrame.Angles(0, 0, math.rad(rng:NextNumber(-6, 6))), Colors.DarkWood, Enum.Material.Wood, DECOR)
+	Build.part(parent, Vector3.new(1.6, 2.8, 1), cf * CFrame.new(0, 5.1, 0), Colors.Straw:Lerp(Color3.new(0, 0, 0), 0.35), Enum.Material.Fabric, DECOR)
+	Build.part(parent, Vector3.one * 1.35, cf * CFrame.new(0, 7.6, 0), Colors.Straw:Lerp(Color3.new(0, 0, 0), 0.3), Enum.Material.Fabric, { Shape = BALL, CanCollide = false, CanTouch = false })
+	-- 팔과 몸에 걸친 넝마
+	for _, x in { -2.2, -1.2, 1.3, 2.3 } do
+		local len = rng:NextNumber(1.2, 2.6)
+		Build.part(parent, Vector3.new(0.7, len, 0.06), cf * CFrame.new(x, 6.2 - len / 2, 0) * CFrame.Angles(0, rng:NextNumber(-0.4, 0.4), 0), rag, Enum.Material.Fabric, GHOST)
+	end
+	Build.part(parent, Vector3.new(1.9, 2.4, 0.08), cf * CFrame.new(0, 3.2, -0.3) * CFrame.Angles(math.rad(6), 0, 0), rag, Enum.Material.Fabric, GHOST)
+	if antlers then
+		for _, side in { -1, 1 } do
+			local beam = cf * CFrame.new(side * 0.4, 8.1, 0) * CFrame.Angles(0, 0, math.rad(side * -28))
+			limb(parent, beam, 2.6, 0.16, Colors.Bone)
+			limb(parent, beam * CFrame.new(0, 1.2, 0) * CFrame.Angles(0, 0, math.rad(side * -45)), 1.2, 0.12, Colors.Bone)
+			limb(parent, beam * CFrame.new(0, 2, 0) * CFrame.Angles(0, 0, math.rad(side * 40)), 0.9, 0.1, Colors.Bone)
+		end
+	else
+		-- 벌목꾼 안전모
+		Build.part(parent, Vector3.new(1.5, 0.55, 1.5), cf * CFrame.new(0, 8.25, 0), Color3.fromRGB(175, 145, 35), Enum.Material.Plastic, GHOST)
+	end
+end
+
+-- 서낭당: 앞이 트인 작은 당집. 앞 = LookVector. 제물상 위 자리들과 쪽지 자리를 돌려줌
+Build.ShrineSize = Vector3.new(12, 9, 10)
+function Build.shrine(parent: Instance, cf: CFrame): ({ Vector3 }, Vector3)
+	local m = Build.model(parent, "Shrine")
+	local red = Color3.fromRGB(104, 42, 36)
+	local w, d, h = 12, 10, 7.5
+	Build.part(m, Vector3.new(w + 2, 0.6, d + 2), cf * CFrame.new(0, 0.3, 0), Colors.Stone, Enum.Material.Slate)
+	Build.part(m, Vector3.new(w + 2, 0.6, 2.5), cf * CFrame.new(0, 0.3, -d / 2 - 2), Colors.Stone, Enum.Material.Slate, nil, "WedgePart") -- 앞 경사
+	Build.part(m, Vector3.new(w, h, 0.8), cf * CFrame.new(0, 0.6 + h / 2, d / 2 - 0.4), red, Enum.Material.WoodPlanks)
+	for _, side in { -1, 1 } do
+		Build.part(m, Vector3.new(0.8, h, d), cf * CFrame.new(side * (w / 2 - 0.4), 0.6 + h / 2, 0), red, Enum.Material.WoodPlanks)
+		Build.part(m, Vector3.new(0.9, h, 0.9), cf * CFrame.new(side * (w / 2 - 0.45), 0.6 + h / 2, -d / 2 + 0.45), Colors.DarkWood, Enum.Material.Wood)
+	end
+	-- 기와지붕 (양쪽 경사 + 용마루)
+	local roofLen = math.sqrt((w / 2 + 1.5) ^ 2 + 3 ^ 2)
+	local roofAngle = math.atan2(3, w / 2 + 1.5)
+	for _, side in { -1, 1 } do
+		Build.part(m, Vector3.new(roofLen, 0.7, d + 3.5), cf * CFrame.new(side * (w / 4 + 0.75), 0.6 + h + 1.6, 0) * CFrame.Angles(0, 0, side * -roofAngle), Color3.fromRGB(38, 38, 42), Enum.Material.Slate)
+	end
+	Build.part(m, Vector3.new(0.9, 0.9, d + 4), cf * CFrame.new(0, 0.6 + h + 3.2, 0), Color3.fromRGB(30, 30, 34), Enum.Material.Slate, DECOR)
+	for _, zSide in { -1, 1 } do
+		for _, side in { -1, 1 } do
+			Build.part(m, Vector3.new(0.6, 3, w / 2), cf * CFrame.new(side * w / 4, 0.6 + h + 1.5, zSide * (d / 2 - 0.4)) * CFrame.Angles(0, side * math.rad(-90), 0), red, Enum.Material.WoodPlanks, DECOR, "WedgePart")
+		end
+	end
+	-- 제물상 + 촛불 + 산신도
+	local tableTop = Build.part(m, Vector3.new(5.5, 0.5, 2.4), cf * CFrame.new(0, 3.1, d / 2 - 2.4), Color3.fromRGB(70, 70, 72), Enum.Material.Slate)
+	for _, x in { -2.2, 2.2 } do
+		Build.part(m, Vector3.new(0.7, 2.5, 2), cf * CFrame.new(x, 1.85, d / 2 - 2.4), Color3.fromRGB(64, 64, 66), Enum.Material.Slate)
+		local candle = Build.part(m, Vector3.new(0.3, 0.9, 0.3), tableTop.CFrame * CFrame.new(x, 0.7, 0.5), Color3.fromRGB(255, 190, 110), Enum.Material.Neon, GHOST)
+		Build.light(candle, Color3.fromRGB(255, 150, 80), 14, 1, true)
+	end
+	Build.part(m, Vector3.new(1.3, 0.35, 1.3), tableTop.CFrame * CFrame.new(0, 0.42, 0.3), Color3.fromRGB(150, 140, 120), Enum.Material.Slate, { Shape = CYL, CanCollide = false, CanTouch = false, CanQuery = false })
+	local painting = Build.part(m, Vector3.new(3.2, 3.8, 0.08), cf * CFrame.new(0, 6, d / 2 - 0.86), Color3.fromRGB(196, 180, 140), Enum.Material.Fabric, GHOST)
+	Build.text(painting, Enum.NormalId.Front, "山\n神", Color3.fromRGB(70, 20, 15))
+	-- 처마에 매단 오색천
+	local cloths = { Color3.fromRGB(60, 80, 120), Color3.fromRGB(200, 195, 180), Color3.fromRGB(130, 40, 35), Color3.fromRGB(30, 30, 32), Color3.fromRGB(170, 150, 60) }
+	for i = 1, 9 do
+		local len = Build.rng:NextNumber(2, 3.6)
+		Build.part(m, Vector3.new(0.5, len, 0.05), cf * CFrame.new(-w / 2 + i * (w / 10), 0.6 + h - len / 2, -d / 2 - 0.4) * CFrame.Angles(0, Build.rng:NextNumber(-0.4, 0.4), 0), cloths[(i % #cloths) + 1], Enum.Material.Fabric, GHOST)
+	end
+	local top = tableTop.CFrame
+	local spots = { (top * CFrame.new(-1.4, 0.25, -0.5)).Position, (top * CFrame.new(1.4, 0.25, -0.5)).Position, (cf * CFrame.new(3.5, 0.6, 1)).Position }
+	return spots, (cf * CFrame.new(-3.2, 0.6, -1)).Position
 end
 
 return Build

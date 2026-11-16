@@ -23,6 +23,7 @@ ItemModels.Sizes = {
 	Herb = 1.2,
 	Gunpowder = 1.3,
 	Cloth = 1.5,
+	Cell = 1,
 }
 
 local METAL = Color3.fromRGB(150, 150, 155)
@@ -188,6 +189,14 @@ local builders: { [string]: (Ctx) -> () } = {
 		c.part(Vector3.new(1.1, 0.18, 0.8), at(0, 0.09, 0), Color3.fromRGB(190, 175, 140), Enum.Material.Fabric)
 		c.part(Vector3.new(1, 0.16, 0.75), at(0.03, 0.26, 0.02) * CFrame.Angles(0, 0.15, 0), Color3.fromRGB(120, 60, 50), Enum.Material.Fabric)
 		c.part(Vector3.new(0.9, 0.3, 0.3), at(0, 0.5, 0), Color3.fromRGB(220, 215, 200), Enum.Material.Fabric, CYL)
+	end,
+	-- 굵은 건전지 두 개
+	Cell = function(c)
+		for i, z in { -0.2, 0.2 } do
+			c.part(Vector3.new(0.8, 0.36, 0.36), at(0, 0.18, z) * CFrame.Angles(0, (i - 1.5) * 0.3, 0), Color3.fromRGB(40, 40, 44), Enum.Material.Metal, CYL)
+			c.part(Vector3.new(0.45, 0.37, 0.37), at(-0.1, 0.18, z) * CFrame.Angles(0, (i - 1.5) * 0.3, 0), Color3.fromRGB(215, 175, 40), Enum.Material.Plastic, CYL)
+			c.part(Vector3.new(0.08, 0.14, 0.14), at(0.43, 0.18, z + (i - 1.5) * -0.13), Color3.fromRGB(190, 190, 195), Enum.Material.Metal, CYL)
+		end
 	end,
 	-- 조명탄 묶음 (거의 안 쓰이지만 혹시 몰라)
 	Ammo = function(c)

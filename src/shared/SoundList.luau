@@ -57,12 +57,21 @@ SoundList.Sounds = {
 	MonsterScream = { id = 9113985604, volume = 1.2, range = 300 }, -- 플레이어 발견 시 비명/포효
 	MonsterFootstep = { id = 9114523636, volume = 1.2, pitch = 0.6, range = 70 }, -- 무거운 발소리 (안 들리면 "rbxasset://sounds/action_footsteps_plastic.mp3" 로 바꾸기)
 	MonsterHurt = { id = 9125476001, volume = 1, range = 120 }, -- 괴물이 맞았을 때
-	MonsterVanish = { id = 9114323612, volume = 0.9, range = 80 }, -- 연기 속으로 사라질 때 (휙~ 바람 소리)
 	MonsterSealed = { id = 9116384799, volume = 1.2, range = 300 }, -- 봉인 성공 (마법/폭발음)
+
+	-------------------------------------------------------------------------
+	-- 날씨 (아직 비어 있어요! docs/소리_넣기.md 의 "비와 천둥" 참고)
+	-- 0인 동안에는 소리 없이 화면(비, 번개)만 나옵니다. 꼭 채워 넣는 걸 추천해요.
+	-------------------------------------------------------------------------
+	Rain = { id = 5911952995, volume = 0.55, looped = true, music = true }, -- 빗소리 (반복). Toolbox 오디오에서 "rain loop" 검색
+	Thunder = { id = 139319051979882, volume = 1 }, -- 천둥 (번개가 친 뒤 우르릉). "thunder" 검색
+	Wind = { id = 9119462099, volume = 0.45, looped = true, music = true }, -- 폭풍 바람 소리 (3막에서 커짐). "wind howl loop" 검색
 
 	-------------------------------------------------------------------------
 	-- 플레이어 행동
 	-------------------------------------------------------------------------
+	FlashlightClick = { id = "rbxasset://sounds/switch.wav", volume = 0.5 }, -- 손전등 켜고 끄기 (임시: 기본 스위치 소리)
+	BatteryLoad = { id = "rbxasset://sounds/switch.wav", volume = 0.7, pitch = 0.7 }, -- 건전지 교체 (임시)
 	Pickup = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.5, pitch = 1.3 }, -- 재료 줍기 (임시: 기본 딩 소리)
 	QuestPickup = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.7, pitch = 0.8 }, -- 탈출 부품 줍기 (임시)
 	NoteOpen = { id = 3657879622, volume = 0.6 }, -- 쪽지 읽기 (종이 바스락)
@@ -82,6 +91,7 @@ SoundList.Sounds = {
 	-------------------------------------------------------------------------
 	Install = { id = 9114436019, volume = 0.9, range = 60 }, -- 퓨즈/부품/안테나 끼우기 (철컥)
 	Generator = { id = 9113910422, volume = 1, range = 200 }, -- 발전기 가동 (부르릉)
+	GeneratorLoop = { id = 9113910422, volume = 0.9, looped = true, range = 220 }, -- 정문이 올라가는 동안 계속 도는 발전기 소리 (반복)
 	GateOpen = { id = 9119630175, volume = 1, range = 200 }, -- 철문 올라가는 소리
 	TruckEngine = { id = 9113005707, volume = 1, looped = true, range = 250 }, -- 트럭 엔진 (시동 후 반복)
 	RadioCall = { id = 9117748085, volume = 0.9, range = 80 }, -- 무전기 지직거림
@@ -93,7 +103,11 @@ SoundList.Sounds = {
 	Whisper = { id = 9126214337, volume = 0.8 }, -- 환청 속삭임
 	TwigSnap = { id = 9120827361, volume = 1, range = 40 }, -- 등 뒤에서 나뭇가지 부러짐
 	Blackout = { id = 9117870273, volume = 0.8 }, -- 정전 (전기 꺼지는 소리)
-	Stinger = { id = 9125712561, volume = 0.9 }, -- 깜짝 효과음 (유령이 보일 때)
+	Stinger = { id = 9125712561, volume = 0.9 }, -- 깜짝 효과음 (번개 속에 형체가 보일 때)
+	FakeStep = { id = 9114523636, volume = 0.7, pitch = 1, range = 45 }, -- 등 뒤에서 따라오는 발소리 (돌아보면 멈춤)
+	Knock = { id = "rbxasset://sounds/collide.wav", volume = 1, pitch = 0.55, range = 50 }, -- 벽/문을 두드리는 소리 (임시: 기본 부딪힘 소리)
+	Scratch = { id = 9120839174, volume = 0.7, pitch = 1.5, range = 30 }, -- 숨어 있는 옷장 문을 긁는 소리
+	Mimic = { id = 9126214337, volume = 1, pitch = 0.85, range = 120 }, -- 숲에서 들려오는 죽은 사람 목소리 (사람 목소리 "도와주세요" 같은 걸 넣으면 훨씬 무서워요)
 
 	-------------------------------------------------------------------------
 	-- 라운드 / 엔딩

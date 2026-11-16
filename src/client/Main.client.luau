@@ -1,20 +1,32 @@
 -- 클라이언트(플레이어 컴퓨터) 시작점
--- 도구 사용 입력, 손전등, 달리기, 효과, 괴물 접근 시 화면 연출을 담당합니다.
+-- 각 기능 모듈을 켜고, 키 입력과 서버가 보낸 효과를 연결합니다.
+--
+--   Flashlight  손전등과 건전지            Lights      깜빡이는 등불, 정전
+--   Immersion   화면 가장자리 어둠, 걸음 출렁임   Weather     비, 번개, 안개
+--   Scares      공포 연출 (발소리, 형체…)      MonsterAnimator 괴물 움직임
+--   Audio       소리와 배경음악             Hud         화면 글씨/창
+--
+-- 조작: [F] 손전등  [R] 건전지 교체  [Shift] 달리기  [Ctrl] 웅크리기  [C] 제작  [Q] 목표 보기
 
 local ContextActionService = game:GetService("ContextActionService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Story = require(ReplicatedStorage.Shared.Story)
 local Audio = require(script.Parent.Audio)
+local Flashlight = require(script.Parent.Flashlight)
 local Hud = require(script.Parent.Hud)
+local Immersion = require(script.Parent.Immersion)
+local Lights = require(script.Parent.Lights)
 local MonsterAnimator = require(script.Parent.MonsterAnimator)
+local Scares = require(script.Parent.Scares)
 local Spectate = require(script.Parent.Spectate)
+local Weather = require(script.Parent.Weather)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -22,6 +34,34 @@ local camera = Workspace.CurrentCamera
 local craftRemote = Remotes.get("Craft")
 local useToolRemote = Remotes.get("UseTool")
 
+-- 대기실에 있을 때는 숲에서 벌어지는 일(다른 팀 메시지, 효과)을 무시
+local function inLobby(): boolean
+	return player:GetAttribute("InLobby") == true
+end
+
+-- 숲에서 살아서 움직이는 중인지
+local function inRound(): boolean
+	return ReplicatedStorage:GetAttribute("RoundState") == "Playing"
+		and player:GetAttribute("InRound") == true
+		and player:GetAttribute("Escaped") ~= true
+end
+
+-- 살아 있는 괴물의 몸통 (쓰러졌거나 봉인됐으면 nil)
+local function monsterRoot(): (BasePart?, string?)
+	local monster = Workspace:FindFirstChild("Monster")
+	local root = monster and monster:FindFirstChild("HumanoidRootPart")
+	if monster and root and root:IsA("BasePart") then
+		local state = monster:GetAttribute("State")
+		if state ~= "Downed" and state ~= "Sealed" then
+			return root, state
+		end
+	end
+	return nil, nil
+end
+
+---------------------------------------------------------------------------
+-- 모듈 켜기
+---------------------------------------------------------------------------
 Hud.init({
 	craft = function(recipeId)
 		craftRemote:FireServer(recipeId)
@@ -30,16 +70,30 @@ Hud.init({
 		MarketplaceService:PromptProductPurchase(player, productId)
 	end,
 })
-MonsterAnimator.start()
 Audio.init()
+Immersion.start()
+Weather.start()
+Lights.start(function()
+	local root = monsterRoot()
+	return root
+end)
+Flashlight.start({
+	onClick = function()
+		Audio.play("FlashlightClick")
+	end,
+	onEmpty = function()
+		if (player:GetAttribute("Cell") or 0) > 0 then
+			Hud.notify("손전등 건전지가 다 닳았다 — [R] 건전지 교체")
+		else
+			Hud.notify("손전등 건전지가 다 닳았다… 건전지를 찾아야 한다")
+		end
+	end,
+})
+MonsterAnimator.start({ isLightOn = Flashlight.isOn })
 Spectate.start()
 
 player.AttributeChanged:Connect(Hud.refresh)
 ReplicatedStorage.AttributeChanged:Connect(Hud.refresh)
--- 대기실에 있을 때는 숲에서 벌어지는 일(다른 팀 메시지, 효과)을 무시
-local function inLobby(): boolean
-	return player:GetAttribute("InLobby") == true
-end
 
 Remotes.get("LobbyNotify").OnClientEvent:Connect(Hud.notify)
 Remotes.get("Notify").OnClientEvent:Connect(function(text: string)
@@ -65,25 +119,9 @@ Remotes.get("StoryEvent").OnClientEvent:Connect(function(kind: string, endingId:
 	end
 end)
 
--- 손전등 ------------------------------------------------------------------
-local flashlightPart = Instance.new("Part")
-flashlightPart.Name = "Flashlight"
-flashlightPart.Size = Vector3.new(0.2, 0.2, 0.2)
-flashlightPart.Transparency = 1
-flashlightPart.Anchored = true
-flashlightPart.CanCollide = false
-flashlightPart.CanQuery = false
-flashlightPart.CanTouch = false
-flashlightPart.Parent = Workspace
-
-local spot = Instance.new("SpotLight")
-spot.Range = Config.Flashlight.Range
-spot.Angle = Config.Flashlight.Angle
-spot.Brightness = Config.Flashlight.Brightness
-spot.Shadows = true
-spot.Color = Color3.fromRGB(255, 240, 210)
-spot.Parent = flashlightPart
-
+---------------------------------------------------------------------------
+-- 매 프레임: 손전등, 1인칭 팔, 빙글 도는 탈출 부품
+---------------------------------------------------------------------------
 -- 1인칭에서도 팔과 들고 있는 도구가 보이게
 local VISIBLE_IN_FIRST_PERSON = {
 	RightUpperArm = true, RightLowerArm = true, RightHand = true,
@@ -91,8 +129,20 @@ local VISIBLE_IN_FIRST_PERSON = {
 	["Right Arm"] = true, ["Left Arm"] = true,
 }
 
-RunService.RenderStepped:Connect(function()
-	flashlightPart.CFrame = camera.CFrame * CFrame.new(0.6, -0.5, 0)
+RunService.RenderStepped:Connect(function(dt)
+	-- 숲지기가 가까이 오거나 정전이면 손전등이 치직거림
+	local interference = 0
+	local mRoot = monsterRoot()
+	if mRoot then
+		local d = (mRoot.Position - camera.CFrame.Position).Magnitude
+		interference = math.clamp(1 - d / 42, 0, 1)
+	end
+	if Lights.isBlackout() then
+		interference = math.max(interference, 0.6)
+	end
+	Flashlight.update(dt, interference, inRound() and not inLobby())
+	Hud.setBattery(Flashlight.battery(), Flashlight.isOn())
+
 	local char = player.Character
 	if char then
 		for _, part in char:GetChildren() do
@@ -103,65 +153,7 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- 깜빡이는 불빛 / 빙글 도는 탈출 부품 ---------------------------------------
--- (매 프레임 맵 전체를 뒤지면 느려지므로, Flicker 표시가 있는 불빛만 목록으로 모아둠)
-local flickerLights: { [PointLight]: number } = {}
-local function registerFlicker(part: Instance)
-	if part:IsA("BasePart") and part:GetAttribute("Flicker") then
-		local light = part:FindFirstChildOfClass("PointLight") or part:WaitForChild("PointLight", 2)
-		if light and light:IsA("PointLight") then
-			flickerLights[light] = light.Brightness
-		end
-	end
-end
-task.spawn(function()
-	local forest = Workspace:WaitForChild("BlackpineForest")
-	for _, d in forest:GetDescendants() do
-		registerFlicker(d)
-	end
-	forest.DescendantAdded:Connect(function(d)
-		task.defer(registerFlicker, d)
-	end)
-end)
-
--- 괴물 근처의 불빛은 꺼지고, 정전 이벤트 때는 전부 꺼짐
-local blackoutUntil = 0
-local function monsterRoot(): BasePart?
-	local monster = Workspace:FindFirstChild("Monster")
-	local root = monster and monster:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then
-		local state = monster:GetAttribute("State")
-		if state ~= "Downed" and state ~= "Sealed" then
-			return root
-		end
-	end
-	return nil
-end
-
-local t0 = os.clock()
 RunService.Heartbeat:Connect(function(dt)
-	local t = os.clock() - t0
-	local mRoot = monsterRoot()
-	local blackout = os.clock() < blackoutUntil
-	for light, base in flickerLights do
-		local part = light.Parent
-		if not part then
-			flickerLights[light] = nil
-		elseif blackout then
-			light.Brightness = if math.random() < 0.02 then base * 0.5 else 0
-		else
-			local n = math.noise(t * 3, base * 7.3)
-			local brightness = if math.random() < 0.01 then 0 else base * (0.75 + n * 0.6)
-			if mRoot and part:IsA("BasePart") then
-				local d = (part.Position - mRoot.Position).Magnitude
-				if d < 35 then
-					-- 괴물이 가까울수록 더 자주 꺼짐
-					brightness = if math.random() < (1 - d / 35) * 0.9 then 0 else brightness * (d / 35)
-				end
-			end
-			light.Brightness = brightness
-		end
-	end
 	local pickups = Workspace:FindFirstChild("Pickups")
 	if pickups then
 		for _, item in pickups:GetChildren() do
@@ -172,117 +164,137 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- 손전등 깜빡임 (괴물이 가깝거나 정전일 때)
-local flashlightOn = true
-RunService.Heartbeat:Connect(function()
-	local flicker = false
-	local mRoot = monsterRoot()
-	if mRoot then
-		local d = (mRoot.Position - camera.CFrame.Position).Magnitude
-		if d < 45 and math.random() < (1 - d / 45) * 0.5 then
-			flicker = true
-		end
-	end
-	if os.clock() < blackoutUntil and math.random() < 0.3 then
-		flicker = true
-	end
-	spot.Enabled = flashlightOn and not flicker
-end)
-
--- 괴물 발소리: 걸음마다 화면이 살짝 울림 (소리는 괴물 위치에서 3D로)
+---------------------------------------------------------------------------
+-- 괴물 소리: 발소리(걸음마다 땅이 울림), 숨소리, 가끔 으르렁
+---------------------------------------------------------------------------
 local stepTimer = 0
+local breathRoot: BasePart? = nil
+local breathSound: Sound? = nil
+local growlTimer = 8
+local BREATH_BY_STATE = { Chase = 1, Hunt = 0.9, Wander = 0.6, Investigate = 0.7, Search = 0.8, Stalk = 0.3, Retreat = 0.4, Stunned = 0.3 }
+
 RunService.Heartbeat:Connect(function(dt)
-	local mRoot = monsterRoot()
+	local mRoot, state = monsterRoot()
 	if not mRoot then
 		return
 	end
+	local frozen = mRoot.Parent ~= nil and mRoot.Parent:GetAttribute("Frozen") == true
+
+	-- 발소리 (소리는 괴물 위치에서 3D로 → 방향을 알 수 있음)
 	local v = mRoot.AssemblyLinearVelocity
 	local speed = Vector3.new(v.X, 0, v.Z).Magnitude
-	if speed < 2 then
-		return
+	if speed >= 2 then
+		stepTimer -= dt
+		if stepTimer <= 0 then
+			stepTimer = math.clamp(9 / speed, 0.25, 0.9)
+			local d = (mRoot.Position - camera.CFrame.Position).Magnitude
+			if d < 70 then
+				-- 살금살금 다가올 때(Stalk)는 발소리가 아주 작음
+				local volume = if state == "Stalk" then 0.25 elseif speed > 15 then 1.2 else 0.8
+				Audio.play("MonsterFootstep", mRoot.Position, volume)
+				if state ~= "Stalk" then
+					Immersion.shake(0.012 * (1 - d / 70), 0.2)
+				end
+			end
+		end
 	end
-	stepTimer -= dt
-	if stepTimer <= 0 then
-		stepTimer = math.clamp(9 / speed, 0.25, 0.9)
-		local d = (mRoot.Position - camera.CFrame.Position).Magnitude
-		if d < 60 then
-			local strength = (1 - d / 60)
-			camera.CFrame = camera.CFrame * CFrame.Angles((math.random() - 0.5) * 0.02 * strength, 0, (math.random() - 0.5) * 0.015 * strength)
-			Audio.play("MonsterFootstep", mRoot.Position, if speed > 15 then 1.2 else 0.8)
+
+	-- 숨소리 (몸에 붙어 따라다님). 굳어 있을 때는 숨도 멈춤
+	if mRoot ~= breathRoot then
+		breathRoot = mRoot
+		breathSound = Audio.loop("MonsterBreath", mRoot)
+	end
+	Audio.fade(breathSound, if frozen then 0 else (BREATH_BY_STATE[state or "Wander"] or 0), dt, 2)
+	growlTimer -= dt
+	if growlTimer <= 0 then
+		growlTimer = math.random(7, 15)
+		if state == "Wander" or state == "Investigate" or state == "Hunt" or state == "Search" then
+			Audio.play("MonsterGrowl", mRoot, 1)
 		end
 	end
 end)
 
--- 괴물이 가까우면 화면이 붉어지고, 배경음악이 긴장/추격 음악으로 바뀜 ----------
+---------------------------------------------------------------------------
+-- 움직임: 달리기(Shift), 웅크리기(Ctrl) + 분위기(음악, 화면)
+---------------------------------------------------------------------------
+local P = Config.Player
+local stamina = 1
+local sprinting = false
+local crouching = false
+
 RunService.Heartbeat:Connect(function(dt)
-	local monster = Workspace:FindFirstChild("Monster")
-	local root = monster and monster:FindFirstChild("HumanoidRootPart")
 	local char = player.Character
-	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	-- 관전 중이면 보고 있는 동료 기준으로 계산
-	local watched = Spectate.subjectRoot()
-	if watched then
-		myRoot = watched
-	elseif hum and hum.Health <= 0 then
-		myRoot = nil
+	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+	local alive = hum ~= nil and hum.Health > 0
+	local downed = player:GetAttribute("Downed") == true
+	local running = false
+
+	if hum and alive then
+		if downed then
+			-- 쓰러짐: 기어다니기만 가능
+			hum.WalkSpeed = 2.5
+			hum.JumpHeight = 0
+			crouching = false
+		else
+			local moving = hum.MoveDirection.Magnitude > 0.1
+			if sprinting and moving and stamina > 0 then
+				stamina = math.max(0, stamina - dt / P.SprintTime)
+				hum.WalkSpeed = P.SprintSpeed
+				crouching = false
+				running = true
+			else
+				if stamina <= 0 then
+					sprinting = false
+				end
+				stamina = math.min(1, stamina + dt / P.SprintRecover)
+				hum.WalkSpeed = if crouching then P.CrouchSpeed else P.WalkSpeed
+			end
+			hum.JumpHeight = if crouching then 0 else 7.2
+		end
+	end
+	Hud.setStamina(stamina)
+
+	-- 괴물과의 거리 → 긴장감. 관전 중이면 보고 있는 동료 기준
+	local subject = Spectate.subjectRoot()
+	if not subject and alive and myRoot and myRoot:IsA("BasePart") then
+		subject = myRoot
 	end
 	local danger = 0
 	local chasing = false
-	if root and myRoot and root:IsA("BasePart") and myRoot:IsA("BasePart") then
-		local state = monster:GetAttribute("State")
-		if state ~= "Downed" and state ~= "Sealed" then
-			local d = (root.Position - myRoot.Position).Magnitude
-			danger = math.clamp(1 - d / 70, 0, 1)
-			chasing = state == "Chase" and d < 110
-		end
+	local mRoot, state = monsterRoot()
+	if mRoot and subject then
+		local d = (mRoot.Position - subject.Position).Magnitude
+		chasing = state == "Chase" and d < 110
+		-- 쫓길 때는 멀리서도, 평소에는 아주 가까워야 느껴짐 (어디 있는지 알려주는 레이더가 되지 않게)
+		danger = math.clamp(1 - d / (if chasing then 80 else 45), 0, 1)
 	end
 	Hud.setDanger(danger)
 
-	local alive = hum ~= nil and hum.Health > 0
 	local lowHealth = 0
 	if hum and alive then
 		lowHealth = math.clamp((0.45 - hum.Health / hum.MaxHealth) / 0.45, 0, 1) -- 체력 45% 아래부터 심장 소리
 	end
-	if player:GetAttribute("Downed") == true then
+	if downed then
 		lowHealth = 1
 	end
-	local playing = ReplicatedStorage:GetAttribute("RoundState") == "Playing"
-		and player:GetAttribute("InRound") == true
-		and player:GetAttribute("Escaped") ~= true
+	local playing = inRound()
 	Audio.update(dt, {
 		playing = playing,
 		danger = danger,
 		chasing = chasing,
 		lowHealth = lowHealth,
 		alive = alive,
+		storm = (ReplicatedStorage:GetAttribute("Act") or 1) >= 3,
 	})
-end)
-
--- 괴물 숨소리(몸에 붙어 따라다님) + 가끔 으르렁 -------------------------------
-local breathRoot: BasePart? = nil
-local breathSound: Sound? = nil
-local growlTimer = 8
-local BREATH_BY_STATE = { Chase = 1, Hunt = 0.9, Wander = 0.6, Investigate = 0.7, Search = 0.8, Stalk = 0.35, Stunned = 0.3 }
-RunService.Heartbeat:Connect(function(dt)
-	local monster = Workspace:FindFirstChild("Monster")
-	local root = monster and monster:FindFirstChild("HumanoidRootPart")
-	if not (monster and root and root:IsA("BasePart")) then
-		return
-	end
-	if root ~= breathRoot then
-		breathRoot = root
-		breathSound = Audio.loop("MonsterBreath", root)
-	end
-	local state = monster:GetAttribute("State") or "Wander"
-	Audio.fade(breathSound, BREATH_BY_STATE[state] or 0, dt, 2)
-	growlTimer -= dt
-	if growlTimer <= 0 then
-		growlTimer = math.random(7, 15)
-		if state == "Wander" or state == "Investigate" or state == "Hunt" or state == "Search" or state == "Stalk" then
-			Audio.play("MonsterGrowl", root, if state == "Stalk" then 0.5 else 1)
-		end
-	end
+	Immersion.set({
+		active = playing and alive,
+		fear = danger,
+		lowHealth = if playing and alive then lowHealth else 0,
+		crouching = crouching and alive and not downed,
+		sprinting = running,
+		downed = downed and alive,
+	})
 end)
 
 -- 내가 쓰러졌을 때
@@ -292,43 +304,14 @@ player:GetAttributeChangedSignal("Downed"):Connect(function()
 	end
 end)
 
--- 달리기 (Shift) ----------------------------------------------------------
-local stamina = 1
-local sprinting = false
-RunService.Heartbeat:Connect(function(dt)
-	local char = player.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return
-	end
-	if player:GetAttribute("Downed") == true then
-		-- 쓰러짐: 기어다니기만 가능, 시점이 낮아짐
-		hum.WalkSpeed = 2.5
-		hum.JumpHeight = 0
-		hum.CameraOffset = hum.CameraOffset:Lerp(Vector3.new(0, -2.6, 0), 0.1)
-		Hud.setStamina(stamina)
-		return
-	end
-	hum.JumpHeight = 7.2
-	hum.CameraOffset = hum.CameraOffset:Lerp(Vector3.zero, 0.15)
-	local moving = hum.MoveDirection.Magnitude > 0.1
-	if sprinting and moving and stamina > 0 then
-		stamina = math.max(0, stamina - dt / 5) -- 5초 달리기
-		hum.WalkSpeed = 23
-	else
-		if stamina <= 0 then
-			sprinting = false
-		end
-		stamina = math.min(1, stamina + dt / 8)
-		hum.WalkSpeed = 15
-	end
-	Hud.setStamina(stamina)
-end)
-
--- 죽음 화면 ---------------------------------------------------------------
+---------------------------------------------------------------------------
+-- 캐릭터가 생길 때
+---------------------------------------------------------------------------
 local function onCharacter(character: Model)
 	Hud.setDead(false)
 	stamina = 1
+	crouching = false
+	Flashlight.reset()
 	local hum = character:WaitForChild("Humanoid") :: Humanoid
 	hum.Died:Connect(function()
 		Hud.setDead(true)
@@ -355,34 +338,61 @@ if player.Character then
 	task.spawn(onCharacter, player.Character)
 end
 
--- 키 입력 -----------------------------------------------------------------
-ContextActionService:BindAction("Flashlight", function(_, inputState)
-	if inputState == Enum.UserInputState.Begin then
-		flashlightOn = not flashlightOn
-	end
-	return Enum.ContextActionResult.Sink
-end, true, Enum.KeyCode.F, Enum.KeyCode.DPadUp)
-ContextActionService:SetTitle("Flashlight", "빛")
+---------------------------------------------------------------------------
+-- 키 입력 (세 번째 값 true = 모바일에서는 화면 버튼이 생김)
+---------------------------------------------------------------------------
+local function bind(name: string, title: string, callback: (began: boolean) -> (), sink: boolean, ...: Enum.KeyCode)
+	ContextActionService:BindAction(name, function(_, inputState)
+		if inputState == Enum.UserInputState.Begin then
+			callback(true)
+		elseif inputState == Enum.UserInputState.End then
+			callback(false)
+		end
+		return if sink then Enum.ContextActionResult.Sink else Enum.ContextActionResult.Pass
+	end, true, ...)
+	ContextActionService:SetTitle(name, title)
+end
 
-ContextActionService:BindAction("CraftMenu", function(_, inputState)
-	if inputState == Enum.UserInputState.Begin then
+bind("Flashlight", "빛", function(began)
+	if began then
+		Flashlight.toggle()
+	end
+end, true, Enum.KeyCode.F, Enum.KeyCode.DPadUp)
+
+bind("Reload", "건전지", function(began)
+	if began and not Flashlight.reload() then
+		if (player:GetAttribute("Cell") or 0) < 1 then
+			Hud.notify("건전지가 없다")
+		end
+	end
+end, true, Enum.KeyCode.R, Enum.KeyCode.DPadRight)
+
+bind("CraftMenu", "제작", function(began)
+	if began then
 		Hud.setCraftOpen(not Hud.isCraftOpen())
 	end
-	return Enum.ContextActionResult.Sink
 end, true, Enum.KeyCode.C, Enum.KeyCode.ButtonY)
-ContextActionService:SetTitle("CraftMenu", "제작")
 
-ContextActionService:BindAction("Sprint", function(_, inputState)
+bind("Sprint", "달리기", function(began)
+	sprinting = began and stamina > 0.1
+end, false, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL3)
+
+bind("Crouch", "웅크리기", function(began)
+	if began then
+		crouching = not crouching
+	end
+end, false, Enum.KeyCode.LeftControl, Enum.KeyCode.ButtonB)
+
+ContextActionService:BindAction("ShowObjectives", function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
-		sprinting = stamina > 0.1
-	elseif inputState == Enum.UserInputState.End then
-		sprinting = false
+		Hud.showObjectives()
 	end
 	return Enum.ContextActionResult.Pass
-end, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL3)
-ContextActionService:SetTitle("Sprint", "달리기")
+end, false, Enum.KeyCode.Q, Enum.KeyCode.DPadLeft)
 
--- 효과 --------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- 서버가 보낸 효과
+---------------------------------------------------------------------------
 local function tempLight(position: Vector3, color: Color3, range: number, brightness: number, duration: number)
 	local p = Instance.new("Part")
 	p.Anchored = true
@@ -403,20 +413,6 @@ local function tempLight(position: Vector3, color: Color3, range: number, bright
 	end)
 end
 
-local function shake(strength: number, duration: number)
-	local start = os.clock()
-	local conn
-	conn = RunService.RenderStepped:Connect(function()
-		local t = os.clock() - start
-		if t > duration then
-			conn:Disconnect()
-			return
-		end
-		local s = strength * (1 - t / duration)
-		camera.CFrame = camera.CFrame * CFrame.Angles((math.random() - 0.5) * s, (math.random() - 0.5) * s, 0)
-	end)
-end
-
 local function myPosition(): Vector3?
 	local char = player.Character
 	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
@@ -429,97 +425,18 @@ end
 -- 공격당하는 순간 카메라가 괴물 얼굴로 확 돌아감
 local function jumpscare(facePos: Vector3)
 	local start = os.clock()
-	RunService:BindToRenderStep("Jumpscare", Enum.RenderPriority.Camera.Value + 1, function()
+	RunService:BindToRenderStep("Jumpscare", Enum.RenderPriority.Camera.Value + 2, function()
 		local t = os.clock() - start
 		if t > 0.45 then
 			RunService:UnbindFromRenderStep("Jumpscare")
 			return
 		end
-		local camPos = camera.CFrame.Position
-		local look = CFrame.lookAt(camPos, facePos)
-		local alpha = math.min(t / 0.08, 1)
-		camera.CFrame = camera.CFrame:Lerp(look, alpha) * CFrame.Angles((math.random() - 0.5) * 0.05, (math.random() - 0.5) * 0.05, 0)
+		local look = CFrame.lookAt(camera.CFrame.Position, facePos)
+		camera.CFrame = camera.CFrame:Lerp(look, math.min(t / 0.08, 1))
 	end)
 end
 
-local function smokeBurst(pos: Vector3)
-	local p = Instance.new("Part")
-	p.Anchored = true
-	p.CanCollide = false
-	p.CanQuery = false
-	p.CanTouch = false
-	p.Transparency = 1
-	p.Size = Vector3.new(4, 10, 4)
-	p.Position = pos + Vector3.new(0, 4, 0)
-	local smoke = Instance.new("ParticleEmitter")
-	smoke.Color = ColorSequence.new(Color3.fromRGB(10, 10, 12))
-	smoke.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3), NumberSequenceKeypoint.new(1, 9) })
-	smoke.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1) })
-	smoke.Lifetime = NumberRange.new(1.5, 2.5)
-	smoke.Speed = NumberRange.new(2, 6)
-	smoke.SpreadAngle = Vector2.new(180, 180)
-	smoke.Rate = 0
-	smoke.Parent = p
-	p.Parent = Workspace
-	smoke:Emit(60)
-	task.delay(3, function()
-		p:Destroy()
-	end)
-end
-
--- 멀리 창백한 벌목꾼 유령: 쳐다보거나 가까이 가면 사라짐
-local function apparition()
-	local look = camera.CFrame.LookVector
-	local flat = Vector3.new(look.X, 0, look.Z)
-	if flat.Magnitude < 0.1 then
-		return
-	end
-	local pos = camera.CFrame.Position + flat.Unit * math.random(40, 60) + camera.CFrame.RightVector * math.random(-15, 15)
-	local ground = Workspace:Raycast(Vector3.new(pos.X, 60, pos.Z), Vector3.new(0, -80, 0))
-	if not ground then
-		return
-	end
-	local base = CFrame.lookAt(ground.Position, Vector3.new(camera.CFrame.Position.X, ground.Position.Y, camera.CFrame.Position.Z))
-	local ghost = Instance.new("Model")
-	ghost.Name = "Apparition"
-	local pale = Color3.fromRGB(200, 210, 220)
-	local function gp(size: Vector3, cf: CFrame, color: Color3?)
-		local p = Instance.new("Part")
-		p.Anchored = true
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.Size = size
-		p.CFrame = base * cf
-		p.Color = color or pale
-		p.Material = Enum.Material.SmoothPlastic
-		p.Transparency = 0.45
-		p.Parent = ghost
-	end
-	gp(Vector3.new(0.8, 2.6, 0.8), CFrame.new(-0.5, 1.3, 0))
-	gp(Vector3.new(0.8, 2.6, 0.8), CFrame.new(0.5, 1.3, 0))
-	gp(Vector3.new(2, 2.4, 1), CFrame.new(0, 3.8, 0), Color3.fromRGB(170, 120, 90))
-	gp(Vector3.new(0.7, 2.6, 0.7), CFrame.new(-1.35, 3.6, 0))
-	gp(Vector3.new(0.7, 2.6, 0.7), CFrame.new(1.35, 3.6, 0))
-	gp(Vector3.new(1.2, 1.2, 1.2), CFrame.new(0, 5.6, 0) * CFrame.Angles(0, 0, 0.35))
-	gp(Vector3.new(1.4, 0.5, 1.4), CFrame.new(0.1, 6.3, 0) * CFrame.Angles(0, 0, 0.35), Color3.fromRGB(200, 170, 60))
-	ghost.Parent = Workspace
-	local start = os.clock()
-	local watched = 0
-	local conn
-	conn = RunService.Heartbeat:Connect(function(dt)
-		local toGhost = (ground.Position + Vector3.new(0, 4, 0)) - camera.CFrame.Position
-		if toGhost.Unit:Dot(camera.CFrame.LookVector) > 0.97 then
-			watched += dt
-		end
-		if os.clock() - start > 6 or watched > 1.2 or toGhost.Magnitude < 25 then
-			conn:Disconnect()
-			ghost:Destroy()
-		end
-	end)
-end
-
-Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: any)
+Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: any, c: any)
 	if inLobby() then
 		return
 	end
@@ -539,7 +456,7 @@ Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: an
 		task.delay(0.08, function()
 			tracer:Destroy()
 		end)
-		tempLight(hitPos, Color3.fromRGB(255, 120, 40), 24, 4, 1.2) -- 조명탄이라 한동안 밝힘
+		tempLight(hitPos, Color3.fromRGB(255, 120, 40), 30, 4, 2.5) -- 조명탄이라 한동안 주변을 밝힘
 		tempLight(origin, Color3.fromRGB(255, 160, 80), 14, 3, 0.08)
 		Audio.play("FlareGun", origin)
 	elseif kind == "Flash" then
@@ -551,14 +468,15 @@ Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: an
 		end
 		Audio.play("Flashbang", position)
 	elseif kind == "Hurt" then
-		Hud.flash(Color3.fromRGB(200, 0, 0), 0.25, 0.8)
-		shake(0.08, 0.5)
+		Hud.flash(Color3.fromRGB(120, 0, 0), 0.45, 0.9)
+		Immersion.hurt()
+		Immersion.shake(0.08, 0.5)
 		Audio.play("PlayerHurt")
 		if typeof(a) == "Vector3" then
 			jumpscare(a)
 		end
 	elseif kind == "Heal" then
-		Hud.flash(Color3.fromRGB(80, 255, 120), 0.75, 0.6)
+		Hud.flash(Color3.fromRGB(80, 255, 120), 0.8, 0.6)
 		Audio.play("Heal")
 	elseif kind == "HitMarker" then
 		Hud.hitMarker()
@@ -569,31 +487,28 @@ Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: an
 		Audio.play("MonsterScream", a :: Vector3) -- 멀리서도 들리지만 작게
 		local me = myPosition()
 		if me and (me - (a :: Vector3)).Magnitude < 100 then
-			shake(0.04, 0.8)
-			Hud.flash(Color3.fromRGB(90, 0, 0), 0.6, 0.8)
+			Immersion.shake(0.04, 0.9)
+			Immersion.pulse(1)
 		end
-	elseif kind == "Vanish" then
-		smokeBurst(a)
-		Audio.play("MonsterVanish", a)
-	elseif kind == "Whisper" then
-		Hud.whisper(a)
-		Hud.flash(Color3.new(0, 0, 0), 0.5, 2)
-		Audio.play("Whisper")
-	elseif kind == "Apparition" then
-		apparition()
-		Audio.play("Stinger")
-	elseif kind == "Snap" then
-		Hud.notify("(등 뒤에서 나뭇가지 부러지는 소리…)")
-		shake(0.03, 0.3)
-		Audio.play("TwigSnap", camera.CFrame.Position - camera.CFrame.LookVector * 10)
-	elseif kind == "Blackout" then
-		blackoutUntil = os.clock() + (b or a or 5)
-		Hud.notify("…불빛이 모두 꺼졌다")
-		Audio.play("Blackout")
+	elseif kind == "Scare" then
+		-- 공포 연출 (a = 종류). 살아서 숲에 있을 때만
+		if typeof(a) == "string" and inRound() and not Spectate.isActive() then
+			Scares.play(a, b, c)
+		end
+	elseif kind == "Act" then
+		-- 밤의 다음 막이 시작됨
+		local line = Story.ActLines[a]
+		if line then
+			Hud.whisper(line)
+		end
+		if a == 3 then
+			Weather.strike(1)
+			Audio.play("Stinger", nil, 0.7)
+		end
 	elseif kind == "Sealed" then
 		tempLight(a, Color3.fromRGB(160, 70, 255), 80, 8, 2.5)
 		Hud.flash(Color3.fromRGB(160, 70, 255), 0.4, 2)
-		shake(0.05, 1.5)
+		Immersion.shake(0.05, 1.5)
 		Audio.play("MonsterSealed", a)
 	elseif kind == "Sfx" then
 		-- 서버가 보낸 효과음 (a = 이름, b = 위치 또는 nil)

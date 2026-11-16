@@ -422,18 +422,10 @@ local function myPosition(): Vector3?
 	return nil
 end
 
--- 공격당하는 순간 카메라가 괴물 얼굴로 확 돌아감
+-- 공격당하는 순간 시선이 괴물 쪽으로 살짝 끌려갔다가 원래대로 돌아옴
+-- (예전처럼 카메라를 완전히 돌려놓지 않아서, 맞은 뒤에도 바로 도망칠 수 있어요)
 local function jumpscare(facePos: Vector3)
-	local start = os.clock()
-	RunService:BindToRenderStep("Jumpscare", Enum.RenderPriority.Camera.Value + 2, function()
-		local t = os.clock() - start
-		if t > 0.45 then
-			RunService:UnbindFromRenderStep("Jumpscare")
-			return
-		end
-		local look = CFrame.lookAt(camera.CFrame.Position, facePos)
-		camera.CFrame = camera.CFrame:Lerp(look, math.min(t / 0.08, 1))
-	end)
+	Immersion.glance(facePos)
 end
 
 Remotes.get("Effect").OnClientEvent:Connect(function(kind: string, a: any, b: any, c: any)

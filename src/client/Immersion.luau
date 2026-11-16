@@ -9,6 +9,7 @@ local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -42,6 +43,14 @@ local hurt = 0 -- 순간적으로 흐려지는 정도
 local shakeStrength = 0
 local shakeUntil = 0
 local shakeLength = 1
+
+-- 기본 카메라 스크립트는 "지난 프레임 카메라가 보던 방향"에서 이어서 돌립니다.
+-- 그래서 흔들림을 그냥 곱해 버리면 매 프레임 쌓여서 화면이 계속 돌아가요.
+-- → 카메라 스크립트가 돌기 직전에 지난 프레임에 얹은 흔들림을 도로 벗겨냅니다.
+local lastOffset = CFrame.identity
+local glancePos: Vector3? = nil
+local glanceStart = 0
+local GLANCE_TIME = 0.5
 
 local function edge(gui: ScreenGui, size: UDim2, position: UDim2, anchor: Vector2, rotation: number)
 	local frame = Instance.new("Frame")
@@ -99,6 +108,20 @@ local function render(dt: number)
 	local fov = BASE_FOV + (if state.sprinting then 6 else 0) - fear * 3 - (if state.crouching then 2 else 0)
 	camera.FieldOfView += (fov - camera.FieldOfView) * math.min(1, dt * 5)
 
+	local total = CFrame.identity
+
+	-- 맞은 순간 시선이 괴물 쪽으로 살짝 끌려갔다가 돌아옴 (끝나면 원래 보던 방향 그대로)
+	if glancePos then
+		local t = (now - glanceStart) / GLANCE_TIME
+		if t >= 1 then
+			glancePos = nil
+		else
+			local cur = camera.CFrame
+			local want = CFrame.lookAt(cur.Position, glancePos)
+			total = cur:Inverse() * cur:Lerp(want, math.sin(t * math.pi) * 0.5)
+		end
+	end
+
 	if hum then
 		-- 시점 높이: 웅크리기 / 쓰러짐
 		local offset = Vector3.zero
@@ -120,15 +143,24 @@ local function render(dt: number)
 			bobPhase += dt * speed * 0.55
 			local amount = math.min(speed / 16, 1.4) * S.HeadBob
 			local breath = math.sin(now * (1.4 + fear * 2.2)) * (0.0025 + fear * 0.004) -- 숨이 가빠짐
-			camera.CFrame *= CFrame.new(math.cos(bobPhase * 0.5) * 0.035 * amount, math.abs(math.sin(bobPhase * 0.5)) * -0.07 * amount, 0)
+			total *= CFrame.new(math.cos(bobPhase * 0.5) * 0.035 * amount, math.abs(math.sin(bobPhase * 0.5)) * -0.07 * amount, 0)
 				* CFrame.Angles(breath, 0, math.sin(bobPhase * 0.5) * 0.006 * amount)
 		end
 	end
 
 	if now < shakeUntil then
+		-- 부드럽게 일렁이는 흔들림 (프레임마다 제멋대로 튀지 않게)
 		local s = shakeStrength * ((shakeUntil - now) / shakeLength)
-		camera.CFrame *= CFrame.Angles((math.random() - 0.5) * s, (math.random() - 0.5) * s, (math.random() - 0.5) * s * 0.5)
+		total *= CFrame.Angles(math.noise(now * 16, 1.3) * 1.4 * s, math.noise(now * 16, 7.7) * 1.4 * s, math.noise(now * 16, 4.1) * 0.7 * s)
 	end
+
+	if total ~= CFrame.identity then
+		camera.CFrame *= total
+		lastOffset = total
+	end
+
+	-- 1인칭으로 마우스가 잠겨 있을 때는 화면 가운데 커서를 숨김
+	UserInputService.MouseIconEnabled = UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter
 end
 
 function Immersion.start()
@@ -151,6 +183,13 @@ function Immersion.start()
 	blur.Size = 0
 	blur.Parent = Lighting
 
+	-- 카메라 스크립트가 돌기 직전: 지난 프레임에 얹은 흔들림을 벗겨냄
+	RunService:BindToRenderStep("ImmersionUndo", Enum.RenderPriority.Camera.Value - 1, function()
+		if lastOffset ~= CFrame.identity then
+			camera.CFrame *= lastOffset:Inverse()
+			lastOffset = CFrame.identity
+		end
+	end)
 	-- 기본 카메라가 자리를 잡은 직후에 덧붙임
 	RunService:BindToRenderStep("Immersion", Enum.RenderPriority.Camera.Value + 1, render)
 end
@@ -173,6 +212,12 @@ end
 -- 순간적으로 시야가 좁아짐 (속삭임, 울부짖음)
 function Immersion.pulse(amount: number)
 	pulse = math.max(pulse, amount)
+end
+
+-- 맞은 순간 시선이 position 쪽으로 살짝 끌려갔다가 돌아옴
+function Immersion.glance(position: Vector3)
+	glancePos = position
+	glanceStart = os.clock()
 end
 
 -- 맞았을 때 화면이 순간 흐려짐

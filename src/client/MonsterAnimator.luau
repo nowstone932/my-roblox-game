@@ -332,6 +332,25 @@ local function animateRig(model: Model, root: BasePart, state: string?, speed: n
 end
 
 -- options.isLightOn: 내 손전등이 켜져 있는지 알려주는 함수 (눈 번쩍임 계산용)
+-- 가까이 있을 때만 몸 윤곽이 희미하게 보임 (어두워도 "저기 뭔가 서 있다"는 건 알아볼 수 있게)
+local function updateOutline(model: Model, root: BasePart)
+	local found = model:FindFirstChild("Presence")
+	local outline: Highlight
+	if found and found:IsA("Highlight") then
+		outline = found
+	else
+		outline = Instance.new("Highlight")
+		outline.Name = "Presence"
+		outline.FillTransparency = 1
+		outline.OutlineColor = Color3.fromRGB(170, 180, 205)
+		outline.DepthMode = Enum.HighlightDepthMode.Occluded
+		outline.Adornee = model
+		outline.Parent = model
+	end
+	local d = (root.Position - camera.CFrame.Position).Magnitude
+	outline.OutlineTransparency = 1 - 0.55 * (1 - math.clamp((d - 25) / 45, 0, 1))
+end
+
 function MonsterAnimator.start(options: { isLightOn: (() -> boolean)? }?)
 	if options and options.isLightOn then
 		isLightOn = options.isLightOn
@@ -345,6 +364,7 @@ function MonsterAnimator.start(options: { isLightOn: (() -> boolean)? }?)
 		if not root or not root:IsA("BasePart") then
 			return
 		end
+		updateOutline(model, root)
 		local state = model:GetAttribute("State")
 		local v = root.AssemblyLinearVelocity
 		local speed = Vector3.new(v.X, 0, v.Z).Magnitude

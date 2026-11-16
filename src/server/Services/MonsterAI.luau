@@ -141,8 +141,8 @@ end
 ---------------------------------------------------------------------------
 local BONE = Color3.fromRGB(198, 190, 170)
 local OLD_BONE = Color3.fromRGB(150, 140, 118)
-local BODY = Color3.fromRGB(24, 20, 18)
-local HIDE = Color3.fromRGB(46, 38, 32)
+local BODY = Color3.fromRGB(54, 48, 45)
+local HIDE = Color3.fromRGB(80, 70, 60)
 local MOSS = Color3.fromRGB(38, 48, 30)
 local BONE_MAT = Enum.Material.Sandstone
 

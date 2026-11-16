@@ -85,6 +85,8 @@ local graceUntil = 0
 -- 숙이기 / 끼임 감지
 local normalHip = 6.5
 local crouching = false
+-- 가져온 3D 모델을 판정 상자에 붙인 용접들 (숙일 때 몸이 땅에 박히지 않게 높이를 보정함)
+local assetWelds: { { weld: Weld, c0: CFrame } } = {}
 local wantsMove = false
 local stuckCheckTime = 0
 local stuckCheckPos: Vector3? = nil
@@ -608,6 +610,11 @@ local function updateCrouch()
 	if want ~= crouching then
 		crouching = want
 		humanoid.HipHeight = if want then normalHip * 0.35 else normalHip
+		-- 가져온 3D 모델은 숙이는 동작이 없어서, 판정 상자만 낮추고 보이는 몸은 그대로 땅에 둠
+		local lift = if want then normalHip * 0.65 else 0
+		for _, entry in assetWelds do
+			entry.weld.C0 = CFrame.new(0, lift, 0) * entry.c0
+		end
 		model:SetAttribute("Crouch", want)
 	end
 end
@@ -1174,19 +1181,124 @@ local function update()
 	tryAttack()
 end
 
+-- 모델 전체가 차지하는 공간 (세계 기준 가장 낮은 모서리, 가장 높은 모서리)
+local function worldBounds(m: Model): (Vector3, Vector3)
+	local low = Vector3.one * math.huge
+	local high = Vector3.one * -math.huge
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			local cf, half = d.CFrame, d.Size / 2
+			local r, u, l = cf.RightVector, cf.UpVector, cf.LookVector
+			local ext = Vector3.new(
+				math.abs(r.X) * half.X + math.abs(u.X) * half.Y + math.abs(l.X) * half.Z,
+				math.abs(r.Y) * half.X + math.abs(u.Y) * half.Y + math.abs(l.Y) * half.Z,
+				math.abs(r.Z) * half.X + math.abs(u.Z) * half.Y + math.abs(l.Z) * half.Z
+			)
+			low = low:Min(cf.Position - ext)
+			high = high:Max(cf.Position + ext)
+		end
+	end
+	return low, high
+end
+
 -- ReplicatedStorage.Assets.Monster 가 있으면 그 모델을 사용
+-- Studio의 "3D 가져오기"로 넣은 모델을 손대지 않고 그대로 넣어도 되도록,
+-- 없는 부품(HumanoidRootPart, Humanoid, 맞는 판정 상자)은 여기서 만들어 붙입니다.
 local function buildFromAsset(position: Vector3): Model?
-	local m = Assets.clone("Monster", "Monster", 15)
+	local m = Assets.clone("Monster", "Monster")
 	if not m then
 		return nil
 	end
-	local hrp = m:FindFirstChild("HumanoidRootPart")
-	local hum = m:FindFirstChildOfClass("Humanoid")
-	if not (hrp and hrp:IsA("BasePart") and hum) then
-		warn("[MonsterAI] Assets.Monster 에 HumanoidRootPart 와 Humanoid 가 필요해요. 기본 괴물을 사용합니다.")
+	local A = Config.MonsterModel
+	local parts: { BasePart } = {}
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			table.insert(parts, d)
+		end
+	end
+	if #parts == 0 then
+		warn("[MonsterAI] Assets.Monster 안에 보이는 부품이 없어요. 기본 괴물을 사용합니다.")
 		m:Destroy()
 		return nil
 	end
+
+	-- 키 맞추기. 팔을 벌린 T자 자세는 옆으로 더 길어서 "가장 긴 변"이 아니라 높이로 맞춤
+	local low, high = worldBounds(m)
+	local height = high.Y - low.Y
+	if height > 0.01 then
+		m:ScaleTo(m:GetScale() * (A.Height / height))
+		low, high = worldBounds(m)
+	end
+
+	local found = m:FindFirstChild("HumanoidRootPart", true)
+	local hrp: BasePart
+	local wrapped = false
+	if found and found:IsA("BasePart") then
+		hrp = found
+	else
+		-- 가져온 그대로의 모델: 안 보이는 판정 상자를 만들고 몸을 거기에 붙임
+		wrapped = true
+		local centre = (low + high) / 2
+		local newRoot = Instance.new("Part")
+		newRoot.Name = "HumanoidRootPart"
+		newRoot.Size = Vector3.new(2.6, 4.5, 1.4)
+		newRoot.CFrame = CFrame.new(centre.X, low.Y + A.HipHeight + 2.25, centre.Z)
+		newRoot.Transparency = 1
+		newRoot.CanTouch = false
+
+		-- 맞는 판정 (몸통 기둥). 벌린 팔의 안 보이는 충돌 모양 대신 이걸 맞춰야 함
+		local hitbox = Instance.new("Part")
+		hitbox.Name = "Hitbox"
+		hitbox.Size = Vector3.new(4.5, A.Height * 0.9, 3.5)
+		hitbox.CFrame = CFrame.new(centre.X, low.Y + A.Height * 0.45, centre.Z)
+		hitbox.Transparency = 1
+		hitbox.CanTouch = false
+
+		-- 다른 부품에 관절로 매달린 부품은 놔두고, 뿌리가 되는 부품만 판정 상자에 붙임
+		local jointed: { [BasePart]: boolean } = {}
+		for _, d in m:GetDescendants() do
+			if d:IsA("JointInstance") and d.Part1 then
+				jointed[d.Part1] = true
+			end
+		end
+		local yaw = CFrame.Angles(0, math.rad(A.FaceYaw), 0)
+		local function weldToRoot(part: BasePart, turn: CFrame)
+			local weld = Instance.new("Weld")
+			weld.Name = "AssetWeld"
+			weld.Part0 = newRoot
+			weld.Part1 = part
+			weld.C0 = turn * newRoot.CFrame:ToObjectSpace(part.CFrame)
+			weld.Parent = newRoot
+			table.insert(assetWelds, { weld = weld, c0 = weld.C0 })
+		end
+		for _, part in parts do
+			if not jointed[part] then
+				part.CanQuery = false
+				weldToRoot(part, yaw)
+			end
+		end
+		weldToRoot(hitbox, CFrame.new())
+		newRoot.Parent = m
+		hitbox.Parent = m
+		hrp = newRoot
+	end
+
+	-- 걷기/길찾기는 Humanoid 가 해야 해서, AnimationController 로 들어온 모델은 Humanoid 로 바꿈
+	for _, d in m:GetDescendants() do
+		if d:IsA("AnimationController") then
+			d:Destroy()
+		end
+	end
+	local hum = m:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		hum = Instance.new("Humanoid")
+		hum.RigType = Enum.HumanoidRigType.R15
+		hum.Parent = m
+	end
+	if not hum:FindFirstChildOfClass("Animator") then
+		Instance.new("Animator").Parent = hum -- 각 플레이어 화면이 여기에 애니메이션을 재생함
+	end
+
 	m.Name = "Monster"
 	for _, d in m:GetDescendants() do
 		if d:IsA("BasePart") then
@@ -1197,10 +1309,12 @@ local function buildFromAsset(position: Vector3): Model?
 	end
 	hrp.Transparency = 1
 	m.PrimaryPart = hrp
-	-- 다리 길이(HipHeight) 자동 계산
-	local cf, size = m:GetBoundingBox()
-	local bottom = cf.Position.Y - size.Y / 2
-	hum.HipHeight = math.max(0.1, (hrp.Position.Y - hrp.Size.Y / 2) - bottom)
+	if wrapped then
+		hum.HipHeight = A.HipHeight
+	else
+		-- 다리 길이(HipHeight) 자동 계산
+		hum.HipHeight = math.max(0.1, (hrp.Position.Y - hrp.Size.Y / 2) - low.Y)
+	end
 	hum.RequiresNeck = false
 	hum.MaxHealth = math.huge
 	hum.Health = math.huge
@@ -1210,13 +1324,14 @@ local function buildFromAsset(position: Vector3): Model?
 	hum.BreakJointsOnDeath = false
 	m:SetAttribute("State", "Wander")
 	m:SetAttribute("IsAsset", true)
-	m:PivotTo(CFrame.new(position + Vector3.new(0, size.Y / 2 + 2, 0)))
+	m:PivotTo(CFrame.new(position + Vector3.new(0, hum.HipHeight + hrp.Size.Y / 2 + 2, 0)))
 	m.Parent = Workspace
 	hrp:SetNetworkOwner(nil)
 	return m
 end
 
 local function spawnMonster()
+	assetWelds = {}
 	model = buildFromAsset(map.MonsterSpawn) or buildModel(map.MonsterSpawn)
 	humanoid = (model :: Model):FindFirstChildOfClass("Humanoid")
 	root = (model :: Model).PrimaryPart

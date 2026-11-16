@@ -176,6 +176,23 @@ Config.Hiding = {
 	BlockedRange = 12, -- 괴물이 이 거리 안에 있으면 숨을 수 없음
 }
 
+-- 직접 만든 3D 괴물 모델 (Studio의 ReplicatedStorage > Assets > Monster 에 넣었을 때만 쓰여요)
+Config.MonsterModel = {
+	Height = 16, -- 괴물 키(스터드). 플레이어 키는 약 5.5. 모델은 이 키에 맞게 자동으로 커지거나 작아져요
+	HipHeight = 6.5, -- 판정 상자가 땅에서 떠 있는 높이 (기본 괴물과 같게)
+	FaceYaw = 0, -- 괴물이 뒷걸음질로 다니면 180 으로 바꾸세요
+	-- Animation Editor에서 "Roblox에 게시"하고 받은 애니메이션 번호 (0 = 없음)
+	Animations = {
+		Idle = 0, -- 가만히 서 있기 (supjigi-still)
+		Walk = 0, -- 걷기 (supjigi-walking)
+		Run = 0, -- 달리기 (supjigi-running)
+		Charge = 0, -- 쫓아올 때 팔을 뻗고 달리기 (supjigi-charge-prototype). 없으면 Run 을 씀
+		Attack = 0, -- 할퀴기 (없어도 됨)
+		Stunned = 0, -- 눈이 부셔 움츠림 (없어도 됨)
+		Scream = 0, -- 울부짖기 (없어도 됨)
+	},
+}
+
 -- 화면 효과
 Config.Screen = {
 	DangerRed = 0, -- 괴물이 가까울 때 화면이 붉어지는 세기 (0~1). 0 = 끔 (대신 화면 가장자리가 어두워지고 심장 소리가 남)

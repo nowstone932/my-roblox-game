@@ -8,11 +8,16 @@
 --      고개만 아주 천천히 나를 따라옵니다. 눈을 떼면 낮게 기어옴
 --    - 손전등 빛이 눈에 닿으면 짐승 눈처럼 번쩍임
 --    - 옷장 뒤지기(Search): 숙여서 킁킁
--- 2) 직접 만든 괴물 에셋(Assets.Monster)에 "Animations" 폴더가 있으면
---    그 안의 Idle / Walk / Run / Attack / Stunned / Scream 애니메이션을 재생합니다.
+-- 2) 직접 만든 괴물 모델(Assets.Monster): 애니메이션을 재생합니다.
+--    Idle / Walk / Run / Charge / Attack / Stunned / Scream
+--    번호는 Config.MonsterModel.Animations 에 넣거나, 모델 안 "Animations" 폴더에 Animation 으로 넣으면 됩니다.
+--    지켜보기 중 내가 쳐다보면 걷던 동작 그대로 그 자리에서 굳습니다.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage.Shared.Config)
 
 local MonsterAnimator = {}
 
@@ -88,44 +93,82 @@ local trackModel: Model? = nil
 local tracks: { [string]: AnimationTrack } = {}
 local playing: string? = nil
 
+local ONE_SHOT = { Attack = true, Scream = true }
+-- 없는 동작은 비슷한 동작으로 대신함
+local FALLBACK: { [string]: { string } } = {
+	Charge = { "Run", "Walk" },
+	Run = { "Charge", "Walk" },
+	Walk = { "Run" },
+	Stunned = { "Idle" },
+}
+
 local function loadTracks(model: Model): boolean
 	if trackModel == model then
 		return next(tracks) ~= nil
 	end
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	local animator = hum and hum:FindFirstChildOfClass("Animator")
+	if not animator then
+		return false -- 아직 서버에서 넘어오는 중. 다음 프레임에 다시 확인
+	end
 	trackModel = model
 	tracks = {}
 	playing = nil
-	local folder = model:FindFirstChild("Animations")
-	local hum = model:FindFirstChildOfClass("Humanoid")
-	if not (folder and hum) then
-		return false
+	local function load(name: string, anim: Animation)
+		local ok, track = pcall(function()
+			return (animator :: Animator):LoadAnimation(anim)
+		end)
+		if ok and track then
+			track.Looped = not ONE_SHOT[name]
+			track.Priority = if ONE_SHOT[name] then Enum.AnimationPriority.Action else Enum.AnimationPriority.Movement
+			tracks[name] = track
+		else
+			warn("[괴물] 애니메이션을 불러오지 못했어요:", name)
+		end
 	end
-	local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
-	for _, anim in folder:GetChildren() do
-		if anim:IsA("Animation") then
-			local ok, track = pcall(function()
-				return animator:LoadAnimation(anim)
-			end)
-			if ok and track then
-				tracks[anim.Name] = track
+	local folder = model:FindFirstChild("Animations")
+	if folder then
+		for _, anim in folder:GetChildren() do
+			if anim:IsA("Animation") then
+				load(anim.Name, anim)
 			end
+		end
+	end
+	for name, id in Config.MonsterModel.Animations do
+		if id ~= 0 and not tracks[name] then
+			local anim = Instance.new("Animation")
+			anim.Name = name
+			anim.AnimationId = "rbxassetid://" .. tostring(id)
+			load(name, anim)
 		end
 	end
 	return next(tracks) ~= nil
 end
 
-local function play(name: string, speed: number?)
-	local track = tracks[name] or tracks.Walk or tracks.Idle
-	if not track then
+local function resolve(name: string): string?
+	if tracks[name] then
+		return name
+	end
+	for _, other in FALLBACK[name] or {} do
+		if tracks[other] then
+			return other
+		end
+	end
+	return nil
+end
+
+local function play(wanted: string, speed: number?)
+	local name = resolve(wanted)
+	if not name then
 		return
 	end
+	local track = tracks[name]
 	if playing ~= name then
 		for n, t in tracks do
-			if n ~= name and t.IsPlaying and n ~= "Attack" and n ~= "Scream" then
+			if n ~= name and t.IsPlaying and not ONE_SHOT[n] then
 				t:Stop(0.25)
 			end
 		end
-		track.Looped = name ~= "Attack" and name ~= "Scream"
 		track:Play(0.25)
 		playing = name
 	end
@@ -144,11 +187,17 @@ local function animateAsset(model: Model, state: string?, speed: number, now: nu
 	end
 	local frozen = model:GetAttribute("Frozen") == true
 	if state == "Stunned" or state == "Downed" or state == "Sealed" then
-		play("Stunned")
+		play("Stunned", 1)
 	elseif frozen then
-		play("Idle", 0) -- 쳐다보는 동안은 그대로 멈춤
+		-- 쳐다보는 동안: 걷던 동작 그대로 그 자리에서 굳음
+		local current = playing and tracks[playing]
+		if current and current.IsPlaying then
+			current:AdjustSpeed(0)
+		else
+			play("Idle", 0)
+		end
 	elseif speed > 14 then
-		play("Run", speed / 20)
+		play(if state == "Chase" then "Charge" else "Run", speed / 20)
 	elseif speed > 1 then
 		play("Walk", speed / 10)
 	else

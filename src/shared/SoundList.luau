@@ -63,9 +63,9 @@ SoundList.Sounds = {
 	-- 날씨 (아직 비어 있어요! docs/소리_넣기.md 의 "비와 천둥" 참고)
 	-- 0인 동안에는 소리 없이 화면(비, 번개)만 나옵니다. 꼭 채워 넣는 걸 추천해요.
 	-------------------------------------------------------------------------
-	Rain = { id = 0, volume = 0.55, looped = true, music = true }, -- 빗소리 (반복). Toolbox 오디오에서 "rain loop" 검색
-	Thunder = { id = 0, volume = 1 }, -- 천둥 (번개가 친 뒤 우르릉). "thunder" 검색
-	Wind = { id = 0, volume = 0.45, looped = true, music = true }, -- 폭풍 바람 소리 (3막에서 커짐). "wind howl loop" 검색
+	Rain = { id = 5911952995, volume = 0.55, looped = true, music = true }, -- 빗소리 (반복). Toolbox 오디오에서 "rain loop" 검색
+	Thunder = { id = 139319051979882, volume = 1 }, -- 천둥 (번개가 친 뒤 우르릉). "thunder" 검색
+	Wind = { id = 9119462099, volume = 0.45, looped = true, music = true }, -- 폭풍 바람 소리 (3막에서 커짐). "wind howl loop" 검색
 
 	-------------------------------------------------------------------------
 	-- 플레이어 행동

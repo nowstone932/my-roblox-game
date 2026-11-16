@@ -7,13 +7,17 @@
 
 ## 게임 흐름
 
-1998년, 사라진 벌목꾼들을 찾으러 흑송 벌목장에 온 수색대. 숲에는 사슴 두개골 얼굴의 "숲지기"가 있다.
+1998년, 사라진 벌목꾼들을 찾으러 흑송 벌목장에 온 수색대. 비 오는 밤의 숲에는 사슴 두개골 얼굴의 "숲지기"가 있다.
+숲지기는 **쳐다보는 동안에는 움직이지 않고**, 죽은 사람의 목소리를 흉내 낸다.
 
 0. **대기실**에서 방(4개, 방마다 최대 5명)에 들어가면 30초 카운트다운 → 그 방 사람들끼리 숲으로 출발
 1. 숲에서 재료와 탈출 부품을 모으고, 쪽지로 단서를 얻는다
 2. 제작대(C)에서 손도끼, 조명탄 총, 섬광탄, 곰덫, 붕대, 봉인 말뚝을 만든다 → 핫바에 실제 도구로 들어옴
-3. 숲지기를 피하거나(나무 뒤, 옷장), 기절시키거나(섬광탄, 덫), 싸운다(도끼, 총)
+3. 숲지기를 피하거나(손전등 끄기, 웅크리기, 나무 뒤, 옷장), 기절시키거나(섬광탄, 덫), 싸운다(도끼, 총)
 4. 4가지 방법 중 하나로 탈출: **정문**(퓨즈) / **트럭**(배터리+연료+열쇠) / **무전 구조**(안테나) / **봉인**(룬 3개로 말뚝 → 쓰러진 괴물에게)
+5. 밤은 3막(정적 → 사냥 → 폭풍)으로 흘러가고, 인식표 7개를 모두 거두고 봉인하면 진엔딩
+
+> ⭐ Studio에서 `Lighting > Technology = Future`, `Terrain > Decoration` 체크를 한 번 해주세요 (docs/시작하기.md 의 "그래픽 설정").
 
 ## 폴더 구조
 
@@ -30,14 +34,16 @@ src/
   server/                   → ServerScriptService.Server
     Main.server.luau        서버 시작점
     Services/
-      Build.luau            소품 만들기 (나무, 오두막, 트럭, 옷장 …)
-      MapBuilder.luau       흑송 벌목장 맵 배치 + 조명
+      Build.luau            소품 만들기 (소나무, 오두막, 트럭, 옷장, 서낭당, 장승 …)
+      MapBuilder.luau       흑송 벌목장 맵 배치 (지형, 절벽, 길, 건물, 숲) + 밤 조명/안개
       LobbyBuilder.luau     대기실 건물 + 방 4개 + 전광판
       Lobby.luau            대기실 방 입장/퇴장, 카운트다운, 출발 (순간이동)
       Pickups.luau          재료 / 탈출 부품 / 쪽지
       Tools.luau            제작한 도구를 핫바에 실제 Tool로 넣기
       Combat.luau           제작, 도구 사용 (서버 판정)
-      MonsterAI.luau        숲지기 모델 + AI (배회, 소리 조사, 길찾기 추격, 수색, 집 안 진입, 기절, 쓰러짐, 봉인)
+      MonsterAI.luau        숲지기 모델 + AI (시야각/청각, 지켜보기, 길찾기 추격, 수색, 집 안 진입, 기절, 쓰러짐, 봉인)
+      Director.luau         밤의 3막 진행 + 상황에 맞는 공포 연출 고르기
+      Light.luau            손전등 켜짐 기록, 건전지 교체, 동료에게 보이는 빛
       Hiding.luau           옷장 / 차 밑 숨기
       Objectives.luau       정문 / 트럭 / 무전 / 봉인 탈출 장치
       GameLoop.luau         라운드 진행, 탈출 처리, 엔딩
@@ -45,16 +51,21 @@ src/
       Inventory.luau        인벤토리 (플레이어 Attribute)
       Sfx.luau              서버에서 효과음 요청
   client/                   → StarterPlayerScripts.Client
-    Main.client.luau        입력, 손전등, 달리기, 효과
+    Main.client.luau        시작점: 입력(달리기, 웅크리기), 서버 효과 연결
+    Flashlight.luau         손전등 (늦게 따라오는 빛, 건전지)
+    Lights.luau             깜빡이는 등불, 정전
+    Weather.luau            비, 번개, 안개, 바람
+    Immersion.luau          화면 가장자리 어둠, 걸음 출렁임, 공포 시 색 빠짐
+    Scares.luau             공포 연출 (발소리, 형체, 목소리 흉내 …)
     Hud.luau                목표 패널, 가방, 제작대, 쪽지, 인트로/엔딩
-    MonsterAnimator.luau    괴물 걷기/팔 뻗기/고개 꺾기 연출
+    MonsterAnimator.luau    괴물 관절 움직임 (걷기, 굳기, 울부짖기, 눈 번쩍임)
     Audio.luau              소리 재생, 긴장/추격 BGM 연출, 괴물 3D 소리
     Spectate.luau           죽거나 탈출하면 살아있는 동료 관전
 ```
 
 ## 다음에 해볼 만한 것
 
-- `src/shared/SoundList.luau` 에 소리 ID 채우기 (docs/소리_넣기.md)
-- Blender 등으로 만든 괴물 메시로 교체
+- `src/shared/SoundList.luau` 의 빗소리/천둥/목소리(Rain, Thunder, Mimic) 채우기 (docs/소리_넣기.md)
+- Blender나 AI 3D 생성(Meshy, Tripo)으로 만든 괴물/나무 메시로 교체 (docs/에셋_요청서.md)
 - DataStore로 탈출 기록·구매 기록 저장
 - Studio에서 맵 직접 꾸미기 (오두막, 길, 안개 낀 호수 등)

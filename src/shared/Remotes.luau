@@ -12,6 +12,8 @@ local NAMES = {
 	"ShowNote", -- 서버 -> 클라: 쪽지 읽기 (noteId)
 	"StoryEvent", -- 서버 -> 클라: 인트로/엔딩 화면 ("Intro" | "Ending", endingId)
 	"LobbyNotify", -- 서버 -> 클라: 대기실/구매 안내 (text). Notify와 달리 대기실에서도 보임
+	"SetLight", -- 클라 -> 서버: 손전등 켬/끔 (on). 괴물이 불빛을 알아보고, 동료 눈에도 보이게 됨
+	"UseCell", -- 클라 -> 서버: 건전지 하나 갈아 끼우기
 }
 
 local folder: Instance

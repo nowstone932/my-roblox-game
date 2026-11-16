@@ -1,10 +1,12 @@
 -- 괴물 움직임 연출 (각 플레이어 화면에서 따로 계산)
 --
--- 1) 기본 괴물: 서버가 만든 관절(Motor6D)을 매 프레임 비틀어서 동작을 만듭니다.
---    - 걷기/달리기, 쫓을 때 팔 뻗기, 공격, 기절 시 얼굴 가리기
---    - 고개가 "보고 있는 나"를 따라 돌아감 (각자 화면에서 자기를 쳐다봄)
---    - 가끔 뚝뚝 끊기듯 멈칫 (기괴한 느낌)
---    - 지켜보기(Stalk): 가만히 서서 고개를 천천히 갸웃
+-- 1) 기본 괴물: 서버(MonsterAI)가 만든 관절(Motor6D)을 매 프레임 비틀어서 동작을 만듭니다.
+--    관절: Waist(허리) Neck(목) Jaw(턱) + Left/Right Shoulder, Elbow, Hip, Knee
+--    - 굽은 등, 꺾인 무릎으로 걷기/달리기. 쫓을 때는 긴 팔을 앞으로 뻗음
+--    - 울부짖을 때 팔을 벌리고 턱이 벌어짐, 공격할 때 내리찍음
+--    - 지켜보기(Stalk): 내가 쳐다보는 동안(Frozen)은 걷던 자세 그대로 돌처럼 굳고,
+--      고개만 아주 천천히 나를 따라옵니다. 눈을 떼면 낮게 기어옴
+--    - 손전등 빛이 눈에 닿으면 짐승 눈처럼 번쩍임
 --    - 옷장 뒤지기(Search): 숙여서 킁킁
 -- 2) 직접 만든 괴물 에셋(Assets.Monster)에 "Animations" 폴더가 있으면
 --    그 안의 Idle / Walk / Run / Attack / Stunned / Scream 애니메이션을 재생합니다.
@@ -16,17 +18,69 @@ local MonsterAnimator = {}
 
 local camera = Workspace.CurrentCamera
 
+local EYE_DARK = Color3.fromRGB(14, 12, 10)
+local EYE_SHINE = Color3.fromRGB(200, 255, 215)
+local ATTACK_TIME = 0.45
+local SCREAM_TIME = 1.2
+
+-- 지금 보고 있는 괴물 모델에 대한 정보
+local boundModel: Model? = nil
+local joints: { [string]: Motor6D } = {}
+local eyes: { BasePart } = {}
+local lastBind = 0
+
 local phase = 0
 local twitch = CFrame.new()
 local nextTwitch = 0
-local freezeUntil = 0
+local stutterUntil = 0
+local lastAttack = 0
+local lastScream = 0
+local attackStart = -10
+local screamStart = -10
+local heldLean = -0.3
 
-local function joint(model: Model, name: string): Motor6D?
-	local found = model:FindFirstChild(name, true)
-	if found and found:IsA("Motor6D") then
-		return found
+local isLightOn: () -> boolean = function()
+	return true
+end
+
+local function bind(model: Model, now: number)
+	local fresh = boundModel ~= model
+	if not fresh and (joints.Waist or now - lastBind < 0.5) then
+		return
 	end
-	return nil
+	boundModel = model
+	lastBind = now
+	joints = {}
+	eyes = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("Motor6D") then
+			joints[d.Name] = d
+		elseif d:IsA("BasePart") and d.Name:lower():find("eye") then
+			table.insert(eyes, d)
+		end
+	end
+	if fresh then
+		lastAttack = model:GetAttribute("AttackCount") or 0
+		lastScream = model:GetAttribute("ScreamCount") or 0
+		attackStart, screamStart = -10, -10
+	end
+end
+
+-- 서버가 올린 횟수(AttackCount/ScreamCount)가 바뀌면 그 순간부터 동작을 시작
+local function pollEvents(model: Model, now: number): (boolean, boolean)
+	local attackCount = model:GetAttribute("AttackCount") or 0
+	local attacked = attackCount ~= lastAttack
+	if attacked then
+		lastAttack = attackCount
+		attackStart = now
+	end
+	local screamCount = model:GetAttribute("ScreamCount") or 0
+	local screamed = screamCount ~= lastScream
+	if screamed then
+		lastScream = screamCount
+		screamStart = now
+	end
+	return attacked, screamed
 end
 
 -- 에셋 애니메이션 -----------------------------------------------------------
@@ -80,127 +134,208 @@ local function play(name: string, speed: number?)
 	end
 end
 
-local lastAttackSeen = 0
-local function animateAsset(model: Model, state: string?, speed: number)
-	local attackAt = model:GetAttribute("AttackAt") or 0
-	if attackAt ~= lastAttackSeen and tracks.Attack then
-		lastAttackSeen = attackAt
+local function animateAsset(model: Model, state: string?, speed: number, now: number)
+	local attacked, screamed = pollEvents(model, now)
+	if attacked and tracks.Attack then
 		tracks.Attack:Play(0.05)
 	end
-	if state == "Stunned" then
+	if screamed and tracks.Scream then
+		tracks.Scream:Play(0.1)
+	end
+	local frozen = model:GetAttribute("Frozen") == true
+	if state == "Stunned" or state == "Downed" or state == "Sealed" then
 		play("Stunned")
-	elseif state == "Downed" or state == "Sealed" then
-		play("Stunned")
+	elseif frozen then
+		play("Idle", 0) -- 쳐다보는 동안은 그대로 멈춤
 	elseif speed > 14 then
 		play("Run", speed / 20)
 	elseif speed > 1 then
 		play("Walk", speed / 10)
 	else
-		play("Idle")
+		play("Idle", 1)
 	end
 end
 
 -- 기본 괴물 (관절 직접 조작) ---------------------------------------------------
-local function lookAtCamera(model: Model): CFrame
-	local torso = model:FindFirstChild("Torso")
-	if not (torso and torso:IsA("BasePart")) then
-		return CFrame.new()
+local function set(name: string, goal: CFrame, alpha: number)
+	local j = joints[name]
+	if j then
+		j.Transform = j.Transform:Lerp(goal, math.min(alpha, 1))
 	end
-	local rel = torso.CFrame:PointToObjectSpace(camera.CFrame.Position) - Vector3.new(0, 2.5, 0)
-	local yaw = math.clamp(math.atan2(-rel.X, -rel.Z), -1.3, 1.3)
-	local pitch = math.clamp(math.atan2(rel.Y, Vector3.new(rel.X, 0, rel.Z).Magnitude), -0.7, 0.7)
-	return CFrame.Angles(pitch, yaw, 0)
 end
 
-local function animateRig(model: Model, state: string?, speed: number, dt: number, now: number)
-	local leftHip, rightHip = joint(model, "LeftHip"), joint(model, "RightHip")
-	local leftArm, rightArm = joint(model, "LeftShoulder"), joint(model, "RightShoulder")
-	local neck, rootJoint = joint(model, "Neck"), joint(model, "RootJoint")
-	if not (leftHip or leftArm or neck) then
-		return
-	end
+-- 괴물 머리에서 내 카메라를 바라보는 각도 (좌우, 위아래)
+local function lookAngles(root: BasePart): (number, number)
+	local rel = root.CFrame:PointToObjectSpace(camera.CFrame.Position) - Vector3.new(0, 4.5, -1.5)
+	local yaw = math.clamp(math.atan2(-rel.X, -rel.Z), -1.2, 1.2)
+	local pitch = math.clamp(math.atan2(rel.Y, Vector3.new(rel.X, 0, rel.Z).Magnitude), -0.9, 0.5)
+	return yaw, pitch
+end
 
-	-- 가끔 뚝 끊기듯 멈춤
-	if now < freezeUntil then
-		return
-	end
-	if math.random() < 0.006 then
-		freezeUntil = now + math.random() * 0.25 + 0.08
-	end
+local function headGoal(lean: number, yaw: number, pitch: number, roll: number): CFrame
+	-- 허리가 숙여진 만큼 고개를 들어서 앞을 보게 한 다음, 좌우/위아래로 돌림
+	return CFrame.Angles(-lean * 0.7, 0, 0) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, roll)
+end
 
-	phase += dt * speed * 0.32
-	local walk = math.min(speed / 18, 1)
-	local swing = math.sin(phase) * 0.75 * walk
-	local searching = model:GetAttribute("Searching") == true
-
-	-- 오두막에 들어갈 때: 다리를 앞뒤로 쩍 벌리고 납작 엎드려 기어감
-	local crouch = model:GetAttribute("Crouch") == true
-	if leftHip then
-		leftHip.Transform = if crouch then CFrame.Angles(1.3 + swing * 0.25, 0, 0.2) else CFrame.Angles(swing, 0, 0)
-	end
-	if rightHip then
-		rightHip.Transform = if crouch then CFrame.Angles(-1.3 - swing * 0.25, 0, -0.2) else CFrame.Angles(-swing, 0, 0)
-	end
-
-	if rootJoint then
-		local lean = -0.12
-		if crouch then
-			lean = -0.3
-		elseif state == "Chase" then
-			lean = -0.4
-		elseif searching then
-			lean = -0.55 + math.sin(now * 3) * 0.08
-		elseif state == "Stalk" then
-			lean = -0.05
-		end
-		rootJoint.Transform = CFrame.Angles(lean + math.sin(phase * 2) * 0.05 * walk, 0, math.sin(phase) * 0.06 * walk)
-	end
-
-	local attackAt = model:GetAttribute("AttackAt") or 0
-	local attacking = now - attackAt < 0.35
-	for i, arm in { leftArm, rightArm } do
-		if arm then
-			local side = if i == 1 then -1 else 1
-			local cf
-			if state == "Stunned" then
-				cf = CFrame.Angles(-2.5, 0, side * -0.4) -- 얼굴을 가림
-			elseif crouch and not attacking then
-				cf = CFrame.Angles(-1.1 + swing * side * 0.4, 0, side * -0.25) -- 바닥을 짚으며 기어감
-			elseif attacking then
-				cf = CFrame.Angles(-1.9 + math.sin(now * 30) * 0.3, 0, side * -0.2)
-			elseif state == "Chase" then
-				cf = CFrame.Angles(-1.3 + swing * side * 0.25, 0, side * -0.15) -- 앞으로 뻗음
-			elseif searching then
-				cf = CFrame.Angles(-0.9 + math.sin(now * 4 + i) * 0.25, 0, side * -0.3) -- 옷장을 더듬음
-			elseif state == "Stalk" then
-				cf = CFrame.Angles(math.sin(now * 0.7 + i) * 0.04, 0, side * 0.05) -- 축 늘어뜨림
-			else
-				cf = CFrame.Angles(-swing * side * 0.5 + math.sin(now * 1.3 + i) * 0.05, 0, side * 0.08)
+local function updateEyes()
+	local camPos = camera.CFrame.Position
+	local look = camera.CFrame.LookVector
+	local lit = isLightOn()
+	for _, eye in eyes do
+		if eye.Parent then
+			local shine = 0
+			local offset = eye.Position - camPos
+			local dist = offset.Magnitude
+			if lit and dist > 1 and dist < 110 then
+				local dir = offset.Unit
+				local inBeam = math.clamp((look:Dot(dir) - 0.9) / 0.07, 0, 1) -- 손전등 빛줄기 안에 있는지
+				local facing = math.clamp(eye.CFrame.LookVector:Dot(-dir) * 2, 0, 1) -- 괴물이 이쪽을 보고 있는지
+				shine = inBeam * facing * math.clamp(1.25 - dist / 110, 0, 1)
 			end
-			arm.Transform = cf
+			eye.Color = EYE_DARK:Lerp(EYE_SHINE, shine)
 		end
-	end
-
-	if neck then
-		if now > nextTwitch then
-			nextTwitch = now + math.random() * 2.5 + 0.4
-			twitch = CFrame.Angles((math.random() - 0.5) * 0.4, (math.random() - 0.5) * 0.5, (math.random() - 0.5) * 1.0)
-		end
-		local goal
-		if state == "Stunned" then
-			goal = CFrame.Angles(0.6, 0, 0)
-		elseif searching then
-			goal = CFrame.Angles(0.5 + math.sin(now * 9) * 0.1, math.sin(now * 2) * 0.6, 0) -- 킁킁
-		elseif state == "Stalk" then
-			goal = lookAtCamera(model) * CFrame.Angles(0, 0, math.sin(now * 0.8) * 0.6) -- 나를 보며 갸웃
-		else
-			goal = lookAtCamera(model) * twitch
-		end
-		neck.Transform = neck.Transform:Lerp(goal, math.min(dt * 10, 1))
 	end
 end
 
-function MonsterAnimator.start()
+local function animateRig(model: Model, root: BasePart, state: string?, speed: number, dt: number, now: number)
+	if not joints.Waist then
+		return
+	end
+	pollEvents(model, now)
+	updateEyes()
+
+	-- 쳐다보는 동안: 걷던 자세 그대로 굳음. 고개만 아주 천천히 따라옴
+	if model:GetAttribute("Frozen") == true then
+		local yaw, pitch = lookAngles(root)
+		set("Neck", headGoal(heldLean, yaw, pitch, 0.32), dt * 1.2)
+		return
+	end
+
+	local attackT = now - attackStart
+	local screamT = now - screamStart
+	local attacking = attackT < ATTACK_TIME
+	local scream = if screamT < SCREAM_TIME and not attacking then math.sin(screamT / SCREAM_TIME * math.pi) else 0
+
+	-- 가끔 뚝 끊기듯 멈칫 (기괴한 느낌)
+	if now < stutterUntil then
+		return
+	end
+	if not attacking and scream == 0 and math.random() < 0.005 then
+		stutterUntil = now + math.random() * 0.22 + 0.06
+	end
+
+	local crouch = model:GetAttribute("Crouch") == true
+	local searching = model:GetAttribute("Searching") == true
+	local fast = dt * 14
+
+	phase += dt * speed * 0.3
+	local walk = math.min(speed / 16, 1)
+	local s = math.sin(phase)
+	local c = math.cos(phase)
+
+	-- 허리: 굽은 등
+	local lean = -0.28
+	if crouch then
+		lean = -1.05
+	elseif state == "Stunned" then
+		lean = 0.12
+	elseif searching then
+		lean = -0.8 + math.sin(now * 3) * 0.06
+	elseif state == "Chase" then
+		lean = -0.55
+	elseif state == "Stalk" then
+		lean = -0.5 -- 낮게 기어옴
+	end
+	lean += (0.2 - lean) * scream * 0.8 -- 울부짖을 때 몸을 일으킴
+	heldLean = lean
+	local breath = math.sin(now * 1.7) * 0.025
+	set("Waist", CFrame.Angles(lean + breath + math.sin(phase * 2) * 0.04 * walk, s * 0.08 * walk, s * 0.05 * walk), fast)
+
+	for i, prefix in { "Left", "Right" } do
+		local side = if i == 1 then -1 else 1
+		local swing = s * side -- 이 다리가 앞으로 나가는 정도 (-1 ~ 1)
+		local lift = math.max(0, c * side) -- 발을 들어 옮기는 구간
+
+		-- 다리: 평소에도 무릎이 꺾여 있음
+		if crouch then
+			set(prefix .. "Hip", CFrame.Angles(1.2 + swing * 0.22, 0, side * 0.14), fast)
+			set(prefix .. "Knee", CFrame.Angles(-2.48 + lift * 0.15, 0, 0), fast)
+		else
+			set(prefix .. "Hip", CFrame.Angles(0.38 + swing * 0.5 * walk, 0, 0), fast)
+			set(prefix .. "Knee", CFrame.Angles(-0.76 - lift * 0.55 * walk, 0, 0), fast)
+		end
+
+		-- 팔: 어깨(앞뒤), 팔꿈치(굽힘), 옆으로 벌림
+		local armSwing = -swing
+		local shoulder, elbow, out
+		if state == "Stunned" then
+			shoulder, elbow, out = 2.3, 1.7, -0.35 -- 얼굴을 가림
+		elseif attacking then
+			local p = attackT / ATTACK_TIME
+			shoulder, elbow, out = 3 - 2 * p * p, 0.3 + 0.7 * p, 0.25 - 0.4 * p -- 위에서 내리찍음
+		elseif crouch then
+			shoulder, elbow, out = 1.3 + armSwing * 0.3, 0.35, 0.2 -- 바닥을 짚으며 기어감
+		elseif state == "Chase" then
+			shoulder, elbow, out = 1.75 + armSwing * 0.25 * walk, 0.45 + math.sin(now * 7 + i) * 0.08, 0.12 -- 앞으로 뻗음
+		elseif searching then
+			shoulder, elbow, out = 1.2 + math.sin(now * 4 + i) * 0.25, 0.7, -0.1 -- 옷장을 더듬음
+		elseif state == "Stalk" then
+			shoulder, elbow, out = 0.8 + armSwing * 0.2 * walk, 0.25, 0.1
+		else
+			shoulder = -lean * 0.8 + armSwing * 0.3 * walk + math.sin(now * 1.1 + i) * 0.04 -- 축 늘어뜨림
+			elbow, out = 0.2 + 0.1 * walk, 0.06
+		end
+		if scream > 0 then
+			shoulder += (-0.45 - shoulder) * scream
+			elbow += (0.5 - elbow) * scream
+			out += (0.75 - out) * scream
+		end
+		local armRate = if attacking then dt * 30 else fast
+		set(prefix .. "Shoulder", CFrame.Angles(shoulder, 0, side * out), armRate)
+		set(prefix .. "Elbow", CFrame.Angles(elbow, 0, 0), armRate)
+	end
+
+	-- 고개
+	if now > nextTwitch then
+		nextTwitch = now + math.random() * 2.5 + 0.4
+		twitch = CFrame.Angles((math.random() - 0.5) * 0.3, (math.random() - 0.5) * 0.4, (math.random() - 0.5) * 0.8)
+	end
+	local goal: CFrame
+	if state == "Stunned" then
+		goal = headGoal(lean, math.sin(now * 23) * 0.15, -0.6, 0)
+	elseif searching then
+		goal = headGoal(lean, math.sin(now * 2) * 0.6, -0.3 + math.sin(now * 9) * 0.08, 0) -- 킁킁
+	elseif state == "Chase" or state == "Stalk" or state == "Search" then
+		local yaw, pitch = lookAngles(root)
+		local roll = if state == "Stalk" then math.sin(now * 0.7) * 0.35 else 0 -- 나를 보며 갸웃
+		goal = headGoal(lean, yaw, pitch + scream * 0.5, roll) * twitch
+	else
+		-- 아무도 못 봤을 때: 천천히 두리번거림
+		goal = headGoal(lean, math.sin(now * 0.45) * 0.55, math.sin(now * 0.31) * 0.12 + scream * 0.5, 0) * twitch
+	end
+	if scream > 0 then
+		goal *= CFrame.Angles(0, 0, math.sin(now * 38) * 0.06 * scream)
+	end
+	set("Neck", goal, dt * 9)
+
+	-- 턱
+	local jaw = 0.03 + breath
+	if attacking then
+		jaw = 0.7
+	elseif state == "Chase" then
+		jaw = 0.22 + math.sin(now * 8) * 0.06 -- 헐떡임
+	elseif searching then
+		jaw = 0.1 + math.sin(now * 9) * 0.05
+	end
+	jaw += scream * 0.85
+	set("Jaw", CFrame.Angles(-jaw, 0, 0), dt * 18)
+end
+
+-- options.isLightOn: 내 손전등이 켜져 있는지 알려주는 함수 (눈 번쩍임 계산용)
+function MonsterAnimator.start(options: { isLightOn: (() -> boolean)? }?)
+	if options and options.isLightOn then
+		isLightOn = options.isLightOn
+	end
 	RunService.RenderStepped:Connect(function(dt)
 		local model = Workspace:FindFirstChild("Monster")
 		if not model or not model:IsA("Model") then
@@ -216,13 +351,16 @@ function MonsterAnimator.start()
 		local now = os.clock()
 
 		if model:GetAttribute("IsAsset") and loadTracks(model) then
-			animateAsset(model, state, speed)
+			bind(model, now)
+			updateEyes() -- 에셋 괴물도 이름에 Eye 가 들어간 파트는 손전등 빛에 번쩍임
+			animateAsset(model, state, speed, now)
 			return
 		end
 		if state == "Downed" or state == "Sealed" then
 			return
 		end
-		animateRig(model, state, speed, dt, now)
+		bind(model, now)
+		animateRig(model, root, state, speed, dt, now)
 	end)
 end
 

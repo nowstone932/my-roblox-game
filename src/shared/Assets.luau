@@ -8,6 +8,8 @@
 --     ├ Items      Fuse, Battery, FuelCan, CarKey, Antenna, Rune, DogTag,
 --     │            Scrap, Wood, Herb, Gunpowder, Cloth
 --     ├ Tools      FlareGun, Axe, Flashbang, Trap, Medkit, SealStake
+--     ├ Props      Pine(소나무), DeadTree(고목), Stump(그루터기), Bush(덤불)
+--     │            → 넣으면 숲의 나무가 전부 그 모델로 바뀝니다 (실사 나무 모델 추천)
 --     └ Monster    (괴물 모델 1개. 자세한 조건은 docs/에셋_요청서.md)
 --
 -- 크기는 자동으로 맞춰주므로 대충 넣어도 됩니다.

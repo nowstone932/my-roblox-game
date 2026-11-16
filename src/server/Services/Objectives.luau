@@ -1,9 +1,11 @@
 -- 탈출 루트 4가지의 장치들
---   정문: 발전기에 퓨즈 3개 → 정문이 올라감 → 출구 구역 통과
+--   정문: 발전기에 퓨즈 3개 → 발전기가 시끄럽게 돌며 정문이 천천히 올라감(Config.Escape.GateOpenTime 초)
+--         → 다 열리면 출구 구역 통과
 --   트럭: 배터리/연료통/열쇠 설치 → 시동(큰 소리) → 20초 버티기 → 근처에 있던 사람만 탈출
 --   무전: 안테나 2개 설치 → 구조 요청(큰 소리) → 90초 뒤 헬기 도착 → 헬기장에 서 있으면 탈출
 --   봉인: (Combat + MonsterAI 에서 처리) 쓰러진 괴물에 봉인 말뚝 → 살아있는 전원 탈출
 --
+-- 탈출 장치를 켜면(정문/트럭/무전) 밤의 마지막 막(폭풍)이 시작됩니다 (Director.triggerFinale).
 -- 진행 상황은 ReplicatedStorage의 Attribute로 공개되어 HUD의 목표 패널에 표시됩니다.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,6 +16,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Inventory = require(script.Parent.Inventory)
 local MonsterAI = require(script.Parent.MonsterAI)
+local Director = require(script.Parent.Director)
 local Sfx = require(script.Parent.Sfx)
 
 local notify = Remotes.get("Notify")
@@ -28,6 +31,7 @@ local generation = 0
 local rageStage = 0
 
 local gateClosedCf: CFrame
+local gateTween: Tween? = nil
 local truckHome: CFrame
 local helicopter: Model? = nil
 
@@ -89,24 +93,71 @@ local function refreshFuseSlots()
 	end
 end
 
-local function openGate()
-	set("GateOpen", true)
-	generatorPrompt.Enabled = false
-	map.GateLamp.Color = Color3.fromRGB(60, 255, 90)
+local function setGateLamp(color: Color3)
+	map.GateLamp.Color = color
 	local lamp = map.GateLamp:FindFirstChildOfClass("PointLight")
 	if lamp then
-		lamp.Color = Color3.fromRGB(60, 255, 90)
+		lamp.Color = color
 	end
+end
+
+local function insideExit(pos: Vector3): boolean
+	local rel = map.ExitZone.CFrame:PointToObjectSpace(pos)
+	local half = map.ExitZone.Size / 2
+	return math.abs(rel.X) < half.X + 1 and math.abs(rel.Y) < half.Y + 4 and math.abs(rel.Z) < half.Z + 1
+end
+
+-- 발전기가 굉음을 내며 돌고, 정문이 천천히 올라감. 다 열릴 때까지 버텨야 함
+local function openGate()
+	set("GateOpening", true)
+	set("GateTimer", E.GateOpenTime)
+	generatorPrompt.Enabled = false
+	setGateLamp(Color3.fromRGB(255, 170, 40))
+	Sfx.attach("GeneratorLoop", map.Generator)
 	Sfx.all("Generator", map.Generator.Position)
 	Sfx.all("GateOpen", map.GateDoor.Position)
-	TweenService:Create(map.GateDoor, TweenInfo.new(4, Enum.EasingStyle.Quad), { CFrame = gateClosedCf + Vector3.new(0, 17, 0) }):Play()
-	map.ExitZone.Transparency = 0.85
-	MonsterAI.noise(map.Generator.Position, Config.Noise.Generator)
-	notify:FireAllClients("발전기 가동! 북쪽 정문이 열린다!")
+	local tween = TweenService:Create(map.GateDoor, TweenInfo.new(E.GateOpenTime, Enum.EasingStyle.Linear), { CFrame = gateClosedCf + Vector3.new(0, 17, 0) })
+	gateTween = tween
+	tween:Play()
+	MonsterAI.noise(map.Generator.Position, Config.Noise.Generator * 2)
+	notify:FireAllClients(("발전기 가동! 정문이 천천히 올라간다… %d초만 버텨라"):format(E.GateOpenTime))
+	Director.triggerFinale()
+
+	local myGeneration = generation
+	task.spawn(function()
+		for t = E.GateOpenTime, 1, -1 do
+			if generation ~= myGeneration then
+				return
+			end
+			set("GateTimer", t)
+			if t % 6 == 0 then
+				-- 발전기 소리가 계속 숲지기를 부름
+				MonsterAI.noise(map.Generator.Position, Config.Noise.Generator * 2)
+				Sfx.all("GateOpen", map.GateDoor.Position)
+			end
+			task.wait(1)
+		end
+		if generation ~= myGeneration then
+			return
+		end
+		set("GateTimer", 0)
+		set("GateOpening", false)
+		set("GateOpen", true)
+		setGateLamp(Color3.fromRGB(60, 255, 90))
+		map.ExitZone.Transparency = 0.85
+		notify:FireAllClients("정문이 열렸다! 북쪽 출구로!")
+		-- 문 밑에서 기다리던 사람은 바로 탈출
+		for _, player in Players:GetPlayers() do
+			local hrp = aliveInRound(player)
+			if hrp and insideExit(hrp.Position) then
+				escape(player, "Gate")
+			end
+		end
+	end)
 end
 
 local function onGenerator(player: Player)
-	if not active or get("GateOpen") then
+	if not active or get("GateOpen") or get("GateOpening") then
 		return
 	end
 	local have = Inventory.get(player, "Fuse")
@@ -208,6 +259,7 @@ local function onTruck(player: Player)
 		setHeadlights(true)
 		Sfx.attach("TruckEngine", map.Truck)
 		MonsterAI.noise(map.Truck:GetPivot().Position, Config.Noise.TruckStart)
+		Director.triggerFinale()
 		progress(("엔진이 굉음을 낸다! %d초 뒤 출발 — 트럭 근처를 지켜라!"):format(E.TruckWarmup))
 		local myGeneration = generation
 		task.spawn(function()
@@ -340,6 +392,7 @@ local function onRadio(player: Player)
 		radioPrompt.Enabled = false
 		Sfx.all("RadioCall", map.Radio.Position)
 		MonsterAI.noise(map.Radio.Position, Config.Noise.RadioCall)
+		Director.triggerFinale()
 		progress(("\"여기는 수색대! 흑송 벌목장 헬기장으로 구조 바람!\" — %d초 뒤 헬기 도착"):format(E.RescueWait))
 		task.spawn(runRescue, generation)
 	end
@@ -391,6 +444,8 @@ function Objectives.reset()
 	rageStage = 0
 	set("FusesPlaced", 0)
 	set("GateOpen", false)
+	set("GateOpening", false)
+	set("GateTimer", 0)
 	set("TruckBattery", false)
 	set("TruckFuel", false)
 	set("TruckKey", false)
@@ -401,12 +456,13 @@ function Objectives.reset()
 	set("RescueTimer", 0)
 	set("MonsterSealed", false)
 
-	map.GateDoor.CFrame = gateClosedCf
-	map.GateLamp.Color = Color3.fromRGB(255, 40, 40)
-	local lamp = map.GateLamp:FindFirstChildOfClass("PointLight")
-	if lamp then
-		lamp.Color = Color3.fromRGB(255, 40, 40)
+	if gateTween then
+		gateTween:Cancel()
+		gateTween = nil
 	end
+	map.GateDoor.CFrame = gateClosedCf
+	setGateLamp(Color3.fromRGB(255, 40, 40))
+	Sfx.detach(map.Generator)
 	map.ExitZone.Transparency = 1
 	generatorPrompt.Enabled = true
 	refreshFuseSlots()

@@ -1,17 +1,24 @@
 -- "숲지기" 괴물 AI
 --
--- 생김새: 키 4~5미터, 사슴 두개골 얼굴과 뿔, 나뭇가지 같은 긴 팔, 검은 연기.
+-- 생김새: 키 4~5미터, 말라붙은 몸에 사슴 두개골 얼굴과 부러진 뿔, 땅에 닿을 듯 긴 팔.
+--         허리에는 사라진 벌목꾼들의 안전모가 매달려 있어요.
 -- 상태:
 --   Wander      배회 (가끔 플레이어 근처로 슬금슬금 옴)
---   Investigate 소리(총소리, 트럭 시동, 무전)가 난 곳을 조사하러 감
+--   Investigate 소리(총소리, 발전기, 트럭 시동, 무전)가 난 곳을 조사하러 감
 --   Chase       플레이어를 보고(또는 발소리를 듣고) 추격. 길찾기로 벽/집을 돌아서 옴
 --   Hunt        놓쳤으면 마지막으로 본 곳(+도망간 방향)으로 가서 주변과 근처 건물 안을 뒤짐
---   Stalk       멀리서 가만히 서서 지켜봄 → 갑자기 돌진하거나, 사라졌다가 등 뒤 어딘가에 나타남
+--   Stalk       멀리서 지켜봄. 쳐다보는 동안은 돌처럼 굳어 있고, 눈을 떼면 조금씩 다가옴.
+--               등을 보이고 뛰면 바로 쫓아오고, 너무 오래 쳐다보면 덮치거나 어둠 속으로 물러남
+--   Retreat     어둠 속으로 걸어서 물러남 → 아무도 안 볼 때 다른 곳으로 자리를 옮김
 --   Search      옷장에 숨는 걸 봤으면 옷장 앞에서 냄새를 맡음 → 확률적으로 문을 열어젖힘
 --   Stunned     섬광탄/덫에 걸려 잠시 멈춤
 --   Downed      체력이 0이 되어 쓰러짐 → 일정 시간 뒤 다시 일어남 (이때 봉인 말뚝 가능)
 --   Sealed      봉인됨 (영구 퇴치)
--- 옷장/차 밑에 숨은 플레이어는 보지 못합니다. 나무 뒤에 숨으면 시야가 가려져요.
+--
+-- 감각 (Config.Monster):
+--   눈: 정면 시야각 안에서만 봄. 손전등을 끄면 훨씬 가까이 가야 보임.
+--   귀: 달리는 소리는 멀리서, 걷는 소리는 가까이서 들음. 웅크려 걸으면 거의 못 들음.
+-- 옷장/차 밑에 숨은 플레이어는 보지 못합니다. 나무나 덤불 뒤에 숨으면 시야가 가려져요.
 -- 오두막에 들어갈 때는 몸을 숙여서(Crouch) 문으로 기어 들어옵니다.
 -- 라운드 시작 후 Config.Monster.StartGrace 초 동안은 둥지 근처만 돌아다녀요.
 
@@ -43,7 +50,7 @@ local generation = 0
 local model: Model? = nil
 local humanoid: Humanoid? = nil
 local root: BasePart? = nil
-local eyes: { BasePart } = {}
+local TICK = 0.2 -- AI가 생각하는 간격(초)
 
 local state = "Wander"
 local hp = C.MaxHealth
@@ -86,27 +93,45 @@ local sidestepUntil = 0
 local sidestepGoal: Vector3? = nil
 
 -- 공포 연출용 상태
-local lastTargetTime = 0 -- 마지막으로 누군가를 쫓은 시각 (기습 순간이동 판단)
+local lastTargetTime = 0 -- 마지막으로 누군가를 쫓은 시각 (기습 판단)
 local lastStalk = -999
 local stalkUntil = 0
 local stalkTarget: Player? = nil
+local stalkWatched = 0 -- 지켜보는 대상이 괴물을 쳐다본 시간(초)
+local retreatFrom: Vector3? = nil
+local retreatUntil = 0
 local lastLunge = 0
 local lungeUntil = 0
 local searchPos: Vector3? = nil
 local searchTarget: Player? = nil
 local searchArrived: number? = nil
+local finale = false -- 마지막 막(폭풍): 더 빠르고 더 집요해짐
 
 local rng = Random.new()
+
+-- 울부짖음. 클라이언트가 ScreamCount 가 바뀐 걸 보고 입을 벌립니다.
+local function scream()
+	if model and root then
+		model:SetAttribute("ScreamCount", (model:GetAttribute("ScreamCount") or 0) + 1)
+		effect:FireAllClients("Scream", root.Position)
+	end
+end
+
+local SCREAM_FROM = { Wander = true, Investigate = true, Hunt = true, Stalk = true }
 
 local function setState(newState: string)
 	if state == newState then
 		return
 	end
-	if newState == "Chase" and (state == "Wander" or state == "Investigate" or state == "Hunt") and root then
-		effect:FireAllClients("Scream", root.Position)
+	if newState == "Chase" and SCREAM_FROM[state] then
+		scream()
 	end
+	local old = state
 	state = newState
 	if model then
+		if old == "Stalk" then
+			model:SetAttribute("Frozen", false)
+		end
 		model:SetAttribute("State", newState)
 	end
 end
@@ -114,9 +139,12 @@ end
 ---------------------------------------------------------------------------
 -- 생김새
 ---------------------------------------------------------------------------
-local BONE = Color3.fromRGB(205, 198, 180)
-local BODY = Color3.fromRGB(22, 18, 16)
-local EYE = Color3.fromRGB(255, 30, 30)
+local BONE = Color3.fromRGB(198, 190, 170)
+local OLD_BONE = Color3.fromRGB(150, 140, 118)
+local BODY = Color3.fromRGB(24, 20, 18)
+local HIDE = Color3.fromRGB(46, 38, 32)
+local MOSS = Color3.fromRGB(38, 48, 30)
+local BONE_MAT = Enum.Material.Sandstone
 
 local function newPart(m: Model, name: string, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material?, collide: boolean?): Part
 	local p = Instance.new("Part")
@@ -126,6 +154,7 @@ local function newPart(m: Model, name: string, size: Vector3, cf: CFrame, color:
 	p.Color = color
 	p.Material = material or Enum.Material.SmoothPlastic
 	p.CanCollide = collide == true
+	p.CanTouch = false
 	p.Massless = collide ~= true
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
@@ -155,68 +184,140 @@ local function motor(name: string, part0: BasePart, part1: BasePart, c0: CFrame,
 	part1.CFrame = part0.CFrame * c0 * c1:Inverse()
 end
 
+-- 관절 이름 (client/MonsterAnimator 가 이 이름으로 움직입니다):
+--   Waist(허리) Neck(목) Jaw(턱)
+--   Left/Right + Shoulder(어깨) Elbow(팔꿈치) Hip(엉덩이) Knee(무릎)
 local function buildModel(position: Vector3): Model
 	local m = Instance.new("Model")
 	m.Name = "Monster"
 	local base = CFrame.new(position)
 
+	-- 몸통 판정 상자(안 보임). 보이는 몸은 여기에 관절로 매달려 있어요.
 	local hrp = newPart(m, "HumanoidRootPart", Vector3.new(2.6, 4.5, 1.4), base, BODY)
 	hrp.Transparency = 1
-	local torso = newPart(m, "Torso", Vector3.new(2.6, 4.5, 1.4), base, BODY, Enum.Material.Slate, true)
+	local torso = newPart(m, "Torso", Vector3.new(2.6, 4.5, 1.4), base, BODY, nil, true)
+	torso.Transparency = 1
 	motor("RootJoint", hrp, torso, CFrame.new(), CFrame.new())
 
-	-- 갈비뼈, 굽은 등
-	for i = 0, 3 do
-		attach(m, torso, Vector3.new(2.2 - i * 0.2, 0.18, 0.2), CFrame.new(0, 1.4 - i * 0.55, -0.72), BONE)
+	-- 골반
+	attach(m, torso, Vector3.new(2, 0.9, 1.1), CFrame.new(0, -1.9, 0), OLD_BONE, BONE_MAT)
+	attach(m, torso, Vector3.new(0.5, 0.5, 0.6), CFrame.new(0, -2.3, 0.75) * CFrame.Angles(math.rad(35), 0, 0), OLD_BONE, BONE_MAT) -- 꼬리뼈
+	-- 허리에 매달린 안전모 (사라진 벌목꾼들의 것)
+	for i = -1, 1 do
+		local hang = CFrame.new(i * 0.75, -2.75 - math.abs(i) * 0.2, 0.6) * CFrame.Angles(math.rad(20), 0, math.rad(i * 25))
+		attach(m, torso, Vector3.new(0.8, 0.45, 0.85), hang, Color3.fromRGB(150, 118, 30), Enum.Material.Metal)
+		attach(m, torso, Vector3.new(0.95, 0.08, 1.1), hang * CFrame.new(0, -0.22, -0.05), Color3.fromRGB(135, 105, 26), Enum.Material.Metal)
+		attach(m, torso, Vector3.new(0.06, 0.75, 0.06), CFrame.new(i * 0.75, -2.3, 0.6), HIDE, Enum.Material.Fabric)
 	end
-	attach(m, torso, Vector3.new(0.4, 3.8, 0.4), CFrame.new(0, 0.2, 0.75), BONE) -- 등뼈
-	attach(m, torso, Vector3.new(3.4, 1.2, 1.8), CFrame.new(0, 1.9, 0.1), BODY, Enum.Material.Slate) -- 어깨
+
+	-- 가슴(갈비뼈). 골반을 축으로 앞으로 숙일 수 있게 Waist 관절로 연결
+	local chest = newPart(m, "Chest", Vector3.new(2.3, 2.2, 1.25), base, BODY, Enum.Material.Slate)
+	motor("Waist", torso, chest, CFrame.new(0, -1.5, 0), CFrame.new(0, -2.6, 0))
+	attach(m, chest, Vector3.new(0.9, 1.7, 0.7), CFrame.new(0, -1.85, 0.12), BODY, Enum.Material.Slate) -- 말라붙은 배
+	for i = 0, 4 do
+		local w = 2.5 - i * 0.22
+		local y = 0.85 - i * 0.42
+		for _, side in { -1, 1 } do
+			-- 갈비뼈: 앞쪽 + 옆으로 감싸는 부분
+			attach(m, chest, Vector3.new(w / 2 - 0.1, 0.13, 0.16), CFrame.new(side * (w / 4 + 0.05), y, -0.66) * CFrame.Angles(0, 0, math.rad(side * -8)), BONE, BONE_MAT)
+			attach(m, chest, Vector3.new(0.16, 0.13, 1.25), CFrame.new(side * (w / 2 - 0.04), y + 0.08, -0.05), BONE, BONE_MAT)
+		end
+	end
+	attach(m, chest, Vector3.new(0.28, 2.2, 0.2), CFrame.new(0, 0, -0.7), OLD_BONE, BONE_MAT) -- 가슴뼈
+	for i = 0, 6 do
+		-- 등뼈 돌기 (굽은 등)
+		attach(m, chest, Vector3.new(0.3, 0.42, 0.55), CFrame.new(0, 1 - i * 0.62, 0.74 - math.abs(i - 2) * 0.05) * CFrame.Angles(math.rad(-25), 0, 0), BONE, BONE_MAT)
+	end
+	attach(m, chest, Vector3.new(3.5, 0.7, 1.1), CFrame.new(0, 0.95, 0.15), HIDE, Enum.Material.Slate) -- 어깨
+	for _, spot in { Vector3.new(-1.3, 0.2, 0.6), Vector3.new(1.2, 0, 0.62), Vector3.new(0.3, -0.7, 0.72) } do
+		-- 등에 늘어진 이끼
+		attach(m, chest, Vector3.new(0.5, 1.8, 0.08), CFrame.new(spot) * CFrame.Angles(math.rad(8), 0, math.rad(spot.X * 6)), MOSS, Enum.Material.Grass)
+	end
+	for i = 0, 2 do
+		attach(m, chest, Vector3.new(0.45, 0.35, 0.45), CFrame.new(0, 1.3 + i * 0.3, -0.15 - i * 0.18), BONE, BONE_MAT) -- 목뼈
+	end
 
 	-- 머리: 사슴 두개골
-	local head = newPart(m, "Head", Vector3.new(1.5, 1.8, 1.8), base, BONE)
-	motor("Neck", torso, head, CFrame.new(0, 2.5, -0.3), CFrame.new(0, -0.9, 0.2))
-	attach(m, head, Vector3.new(1, 0.9, 1.6), CFrame.new(0, -0.45, -1.4), BONE) -- 주둥이
-	attach(m, head, Vector3.new(0.8, 0.2, 0.3), CFrame.new(0, -0.85, -2.05), Color3.fromRGB(30, 25, 20)) -- 이빨 자리
-	for _, side in { -1, 1 } do
-		attach(m, head, Vector3.new(0.5, 0.45, 0.2), CFrame.new(side * 0.42, 0.15, -0.86), Color3.new(0, 0, 0)) -- 눈구멍
-		table.insert(eyes, attach(m, head, Vector3.new(0.22, 0.22, 0.1), CFrame.new(side * 0.42, 0.15, -0.95), EYE, Enum.Material.Neon))
-		-- 뿔
-		local beamCf = CFrame.new(side * 0.55, 0.8, 0.1) * CFrame.Angles(math.rad(-15), 0, math.rad(side * -30))
-		local beam = attach(m, head, Vector3.new(0.28, 4, 0.28), beamCf * CFrame.new(0, 2, 0), Color3.fromRGB(150, 140, 120), Enum.Material.Wood)
-		for t = 0, 2 do
-			attach(m, beam, Vector3.new(0.2, 1.6 - t * 0.3, 0.2), CFrame.new(0, -1 + t * 1.1, 0) * CFrame.Angles(math.rad(-40), 0, math.rad(side * 45)) * CFrame.new(0, 0.7, 0), Color3.fromRGB(150, 140, 120), Enum.Material.Wood)
+	local head = newPart(m, "Head", Vector3.new(1.3, 1.4, 1.6), base, BONE, BONE_MAT)
+	motor("Neck", chest, head, CFrame.new(0, 2, -0.6), CFrame.new(0, -0.5, 0.5))
+	attach(m, head, Vector3.new(0.95, 0.75, 1.5), CFrame.new(0, -0.2, -1.45) * CFrame.Angles(math.rad(-6), 0, 0), BONE, BONE_MAT) -- 긴 주둥이
+	attach(m, head, Vector3.new(0.5, 0.3, 0.3), CFrame.new(0, -0.08, -2.12), Color3.fromRGB(20, 16, 14)) -- 콧구멍
+	for i = 0, 4 do
+		for _, side in { -1, 1 } do
+			attach(m, head, Vector3.new(0.1, 0.28, 0.12), CFrame.new(side * 0.36, -0.7, -0.95 - i * 0.26), BONE, BONE_MAT) -- 윗니
 		end
 	end
-	local glow = Instance.new("PointLight")
-	glow.Color = EYE
-	glow.Range = 12
-	glow.Brightness = 1.5
-	glow.Parent = head
-
-	-- 긴 팔과 갈고리 손톱
 	for _, side in { -1, 1 } do
-		local arm = newPart(m, if side < 0 then "LeftArm" else "RightArm", Vector3.new(0.6, 8, 0.6), base, BODY, Enum.Material.Wood)
-		motor(if side < 0 then "LeftShoulder" else "RightShoulder", torso, arm, CFrame.new(side * 1.9, 1.9, 0), CFrame.new(0, 3.7, 0))
-		attach(m, arm, Vector3.new(0.75, 0.6, 0.75), CFrame.new(0, 0.3, 0), BODY, Enum.Material.Slate) -- 팔꿈치
-		for k = -1, 1 do
-			attach(m, arm, Vector3.new(0.12, 1.6, 0.12), CFrame.new(k * 0.22, -4.4, -0.2) * CFrame.Angles(math.rad(25), 0, math.rad(k * 10)), BONE)
+		attach(m, head, Vector3.new(0.5, 0.5, 0.25), CFrame.new(side * 0.42, 0.12, -0.72), Color3.new(0, 0, 0)) -- 눈구멍
+		-- 눈: 평소엔 안 보이다가 손전등 빛을 받으면 짐승 눈처럼 번쩍임 (클라이언트가 처리)
+		local eye = attach(m, head, Vector3.new(0.17, 0.17, 0.17), CFrame.new(side * 0.42, 0.12, -0.82), Color3.fromRGB(14, 12, 10), Enum.Material.Neon)
+		eye.Name = "Eye"
+		eye.Shape = Enum.PartType.Ball
+
+		-- 뿔: 왼쪽은 온전하고 오른쪽은 부러져 있음
+		local full = side < 0
+		local len = if full then 4.2 else 2
+		local tines = if full then 3 else 1
+		local beamCf = CFrame.new(side * 0.5, 0.65, 0.25) * CFrame.Angles(math.rad(-18), 0, math.rad(side * -32))
+		local beam = attach(m, head, Vector3.new(0.26, len, 0.26), beamCf * CFrame.new(0, len / 2, 0), OLD_BONE, Enum.Material.Wood)
+		for t = 0, tines do
+			local tine = 1.7 - t * 0.3
+			attach(m, beam, Vector3.new(0.17, tine, 0.17), CFrame.new(0, -len / 2 + 0.8 + t * 1.05, 0) * CFrame.Angles(math.rad(-45), 0, math.rad(side * 40)) * CFrame.new(0, tine / 2, 0), OLD_BONE, Enum.Material.Wood)
 		end
-		local leg = newPart(m, if side < 0 then "LeftLeg" else "RightLeg", Vector3.new(0.8, 6.5, 0.8), base, BODY, Enum.Material.Wood)
-		motor(if side < 0 then "LeftHip" else "RightHip", torso, leg, CFrame.new(side * 0.8, -2.25, 0), CFrame.new(0, 3.25, 0))
-		attach(m, leg, Vector3.new(0.9, 0.5, 1.6), CFrame.new(0, -3.1, -0.4), BODY, Enum.Material.Slate) -- 발굽
+		if full then
+			-- 뿔에 걸린 금줄 조각
+			attach(m, beam, Vector3.new(0.06, 1.5, 0.4), CFrame.new(0.15, 0.9, 0) * CFrame.Angles(0, 0, math.rad(32)), Color3.fromRGB(170, 160, 140), Enum.Material.Fabric)
+		end
 	end
 
-	-- 몸에서 피어오르는 검은 연기
-	local smoke = Instance.new("ParticleEmitter")
-	smoke.Color = ColorSequence.new(Color3.fromRGB(10, 10, 12))
-	smoke.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2), NumberSequenceKeypoint.new(1, 6) })
-	smoke.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.6), NumberSequenceKeypoint.new(1, 1) })
-	smoke.Lifetime = NumberRange.new(1.5, 2.5)
-	smoke.Rate = 10
-	smoke.Speed = NumberRange.new(0.5, 1.5)
-	smoke.SpreadAngle = Vector2.new(180, 180)
-	smoke.LightInfluence = 1
-	smoke.Parent = torso
+	-- 아래턱 (울부짖을 때 벌어짐)
+	local jaw = newPart(m, "Jaw", Vector3.new(0.8, 0.22, 2.1), base, OLD_BONE, BONE_MAT)
+	motor("Jaw", head, jaw, CFrame.new(0, -0.72, -0.2), CFrame.new(0, 0.1, 1.05))
+	for i = 0, 4 do
+		for _, side in { -1, 1 } do
+			attach(m, jaw, Vector3.new(0.1, 0.26, 0.12), CFrame.new(side * 0.3, 0.22, -0.3 - i * 0.26), BONE, BONE_MAT) -- 아랫니
+		end
+	end
+
+	-- 입김 (손전등 빛에 비치면 보임)
+	local snout = Instance.new("Attachment")
+	snout.Name = "Snout"
+	snout.CFrame = CFrame.new(0, -0.35, -2.3)
+	snout.Parent = head
+	local mist = Instance.new("ParticleEmitter")
+	mist.Name = "BreathMist"
+	mist.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	mist.Color = ColorSequence.new(Color3.fromRGB(190, 195, 205))
+	mist.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1.8) })
+	mist.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.82), NumberSequenceKeypoint.new(1, 1) })
+	mist.Lifetime = NumberRange.new(1.2, 1.8)
+	mist.Rate = 7
+	mist.Speed = NumberRange.new(1.5, 2.5)
+	mist.SpreadAngle = Vector2.new(14, 14)
+	mist.EmissionDirection = Enum.NormalId.Front
+	mist.LightInfluence = 1
+	mist.Parent = snout
+
+	for _, side in { -1, 1 } do
+		local prefix = if side < 0 then "Left" else "Right"
+		-- 팔: 위팔 + 아래팔 + 갈고리 손톱
+		local upper = newPart(m, prefix .. "UpperArm", Vector3.new(0.55, 4, 0.55), base, BODY, Enum.Material.Slate)
+		motor(prefix .. "Shoulder", chest, upper, CFrame.new(side * 1.7, 0.85, 0.1), CFrame.new(0, 2, 0))
+		attach(m, upper, Vector3.new(0.75, 0.6, 0.75), CFrame.new(0, -2, 0), OLD_BONE, BONE_MAT) -- 팔꿈치 뼈
+		local fore = newPart(m, prefix .. "Forearm", Vector3.new(0.45, 4.6, 0.45), base, HIDE, Enum.Material.Slate)
+		motor(prefix .. "Elbow", upper, fore, CFrame.new(0, -2, 0), CFrame.new(0, 2.3, 0))
+		attach(m, fore, Vector3.new(0.7, 0.5, 0.35), CFrame.new(0, -2.3, 0), BODY, Enum.Material.Slate) -- 손바닥
+		for k = 0, 3 do
+			attach(m, fore, Vector3.new(0.1, 1.5, 0.1), CFrame.new(-0.3 + k * 0.2, -3.1, -0.12) * CFrame.Angles(math.rad(14), 0, math.rad((k - 1.5) * 7)), BONE, BONE_MAT)
+		end
+		-- 다리: 허벅지 + 정강이 + 발굽
+		local thigh = newPart(m, prefix .. "Thigh", Vector3.new(0.75, 3.4, 0.75), base, BODY, Enum.Material.Slate)
+		motor(prefix .. "Hip", torso, thigh, CFrame.new(side * 0.7, -2.25, 0), CFrame.new(0, 1.7, 0))
+		local shin = newPart(m, prefix .. "Shin", Vector3.new(0.5, 3.6, 0.5), base, HIDE, Enum.Material.Slate)
+		motor(prefix .. "Knee", thigh, shin, CFrame.new(0, -1.7, 0), CFrame.new(0, 1.8, 0))
+		attach(m, shin, Vector3.new(0.65, 0.5, 0.65), CFrame.new(0, 1.8, 0), OLD_BONE, BONE_MAT) -- 무릎뼈
+		attach(m, shin, Vector3.new(0.6, 0.45, 1), CFrame.new(0, -1.6, -0.25), Color3.fromRGB(12, 10, 9), Enum.Material.Slate) -- 발굽
+	end
 
 	local hum = Instance.new("Humanoid")
 	hum.RigType = Enum.HumanoidRigType.R15
@@ -232,7 +333,7 @@ local function buildModel(position: Vector3): Model
 
 	m.PrimaryPart = hrp
 	m:SetAttribute("State", "Wander")
-	m:PivotTo(base + Vector3.new(0, 6, 0))
+	m:PivotTo(base + Vector3.new(0, 9, 0))
 	m.Parent = Workspace
 	hrp:SetNetworkOwner(nil)
 	return m
@@ -269,25 +370,56 @@ local function canSee(char: Model, hrp: BasePart): boolean
 	return result == nil or result.Instance:IsDescendantOf(char)
 end
 
+local function flatSpeed(part: BasePart): number
+	local v = part.AssemblyLinearVelocity
+	return Vector3.new(v.X, 0, v.Z).Magnitude
+end
+
+-- 손전등을 켜고 있는지 (Services/Light 가 LightOn 속성을 관리)
+local function lightOn(player: Player): boolean
+	return player:GetAttribute("LightOn") ~= false
+end
+
+local ALERT = { Chase = true, Hunt = true, Search = true }
+
 -- 눈으로 본 플레이어 (가장 가까운)
+--   손전등을 켠 사람은 멀리서도 보이고, 끈 사람은 가까이 가야 보입니다.
+--   평소에는 정면 시야각 안만 보지만, 쫓는 중에는 사방을 살핍니다.
 local function findTarget(): (Player?, BasePart?)
 	if not root then
 		return nil, nil
 	end
-	local best, bestPart, bestDist = nil, nil, C.SightRange
+	local look = root.CFrame.LookVector
+	local cone = math.cos(math.rad(C.SightAngle))
+	local alert = ALERT[state] == true
+	local best, bestPart, bestDist = nil, nil, math.huge
 	for _, player in Players:GetPlayers() do
 		local char, hrp = aliveCharacter(player)
 		if char and hrp then
-			local dist = (hrp.Position - root.Position).Magnitude
-			if dist < bestDist and canSee(char, hrp) then
-				best, bestPart, bestDist = player, hrp, dist
+			local offset = hrp.Position - root.Position
+			local dist = offset.Magnitude
+			local lit = lightOn(player)
+			local range = if lit then C.SightRange else C.DarkSightRange
+			if not lit and flatSpeed(hrp) < 9 then
+				range *= 0.7 -- 불 끄고 웅크려 있으면 더 안 보임
+			end
+			if dist < range and dist < bestDist then
+				local dir = if dist > 0.1 then offset.Unit else look
+				local noticed = alert or dist < C.CloseSenseRange or look:Dot(dir) > cone
+				if not noticed and lit and dist < C.LightOnBackRange then
+					-- 등 뒤에서 손전등으로 비추면 눈치챔
+					noticed = hrp.CFrame.LookVector:Dot(-dir) > 0.9
+				end
+				if noticed and canSee(char, hrp) then
+					best, bestPart, bestDist = player, hrp, dist
+				end
 			end
 		end
 	end
 	return best, bestPart
 end
 
--- 귀로 들은 플레이어: 아주 가까이 있거나(HearRange), 달리는 발소리, 가까운 걸음 소리
+-- 귀로 들은 플레이어: 달리는 소리는 멀리서, 걷는 소리는 가까이서, 웅크리면 바로 옆에서만
 local function findHeard(): (Player?, BasePart?, number)
 	if not root then
 		return nil, nil, math.huge
@@ -297,17 +429,38 @@ local function findHeard(): (Player?, BasePart?, number)
 		local char, hrp = aliveCharacter(player)
 		if char and hrp then
 			local dist = (hrp.Position - root.Position).Magnitude
-			local v = hrp.AssemblyLinearVelocity
-			local speed = Vector3.new(v.X, 0, v.Z).Magnitude
-			local heard = dist < C.HearRange
-				or (speed > 18 and dist < C.SprintHearRange)
-				or (speed > 4 and dist < C.WalkHearRange)
-			if heard and dist < bestDist then
+			local speed = flatSpeed(hrp)
+			local range = C.StillHearRange
+			if speed > 18 then
+				range = C.SprintHearRange
+			elseif speed > 10 then
+				range = C.WalkHearRange
+			end
+			if dist < range and dist < bestDist then
 				best, bestPart, bestDist = player, hrp, dist
 			end
 		end
 	end
 	return best, bestPart, bestDist
+end
+
+-- 이 플레이어가 괴물 쪽을 보고 있는지 (지켜보기 상태에서 "쳐다보면 멈춤" 판단)
+local function isWatchedBy(player: Player, char: Model, hrp: BasePart): boolean
+	if not root then
+		return false
+	end
+	local offset = root.Position - hrp.Position
+	local range = if lightOn(player) then 85 else 30 -- 불을 끄면 가까이 있어야 보임
+	if offset.Magnitude > range then
+		return false
+	end
+	local look = hrp.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	local flatDir = Vector3.new(offset.X, 0, offset.Z)
+	if flatLook.Magnitude < 0.01 or flatDir.Magnitude < 0.01 then
+		return true
+	end
+	return flatLook.Unit:Dot(flatDir.Unit) > 0.5 and canSee(char, hrp)
 end
 
 ---------------------------------------------------------------------------
@@ -511,7 +664,7 @@ local function startHunt(center: Vector3)
 end
 
 local function chaseSpeed(): number
-	return C.ChaseSpeed + rage * C.RagePerStage
+	return C.ChaseSpeed + rage * C.RagePerStage + (if finale then C.FinaleSpeedBonus else 0)
 end
 
 local function tryAttack()
@@ -537,7 +690,8 @@ local function tryAttack()
 				local hum = char:FindFirstChildOfClass("Humanoid")
 				if hum then
 					if model then
-						model:SetAttribute("AttackAt", os.clock())
+						-- 서버와 클라이언트는 시계가 달라서, 시각 대신 횟수를 올려 알립니다.
+						model:SetAttribute("AttackCount", (model:GetAttribute("AttackCount") or 0) + 1)
 					end
 					local head = model and model:FindFirstChild("Head")
 					local facePos = if head and head:IsA("BasePart") then head.Position else root.Position + Vector3.new(0, 5, 0)
@@ -558,14 +712,6 @@ local function tryAttack()
 	end
 end
 
-local function setEyes(color: Color3)
-	for _, eye in eyes do
-		if eye.Parent then
-			eye.Color = color
-		end
-	end
-end
-
 local function pickWanderGoal(): Vector3
 	-- 시작 유예 시간: 둥지(제단) 근처만 어슬렁거림
 	if os.clock() < graceUntil then
@@ -581,7 +727,7 @@ local function pickWanderGoal(): Vector3
 		end
 	end
 	-- 일정 확률로 아무 플레이어 근처로 (긴장감)
-	if rng:NextNumber() < C.NearPlayerWanderChance then
+	if rng:NextNumber() < (if finale then 0.8 else C.NearPlayerWanderChance) then
 		local candidates = {}
 		for _, player in Players:GetPlayers() do
 			local _, hrp = aliveCharacter(player)
@@ -631,13 +777,12 @@ local function revive()
 	hp = C.MaxHealth
 	humanoid.PlatformStand = false
 	model:PivotTo(CFrame.new(root.Position + Vector3.new(0, 8, 0)))
-	setEyes(EYE)
 	setState("Wander")
 	wanderGoal = nil
 	notify:FireAllClients("숲지기가 다시 일어났다…!")
 end
 
--- 모든 플레이어에게서 안 보이는지 (머리 → 지점 레이가 막히면 안 보임)
+-- 모든 플레이어에게서 안 보이는지 (머리 → 지점 레이가 막히면 안 보임. 안개 때문에 멀면 어차피 안 보임)
 local function hiddenFromEveryone(pos: Vector3): boolean
 	for _, player in Players:GetPlayers() do
 		local char, hrp = aliveCharacter(player)
@@ -648,7 +793,10 @@ local function hiddenFromEveryone(pos: Vector3): boolean
 			params.FilterType = Enum.RaycastFilterType.Exclude
 			params.FilterDescendantsInstances = { char, model :: Instance }
 			local dir = (pos + Vector3.new(0, 6, 0)) - from
-			if dir.Magnitude < 25 or not Workspace:Raycast(from, dir, params) then
+			if dir.Magnitude < 25 then
+				return false
+			end
+			if dir.Magnitude < 120 and not Workspace:Raycast(from, dir, params) then
 				return false
 			end
 		end
@@ -657,8 +805,12 @@ local function hiddenFromEveryone(pos: Vector3): boolean
 end
 
 local function groundAt(pos: Vector3): Vector3?
+	local inside = math.abs(pos.X) < map.HalfSize - 15 and pos.Z < map.HalfSize - 15 and pos.Z > -map.HalfSize + 40
+	if not inside then
+		return nil
+	end
 	local result = Workspace:Raycast(Vector3.new(pos.X, 80, pos.Z), Vector3.new(0, -100, 0))
-	if result and result.Position.Y < 2 and math.abs(pos.X) < map.HalfSize - 15 and math.abs(pos.Z) < map.HalfSize - 15 and not nearBuilding(result.Position, 4) then
+	if result and result.Position.Y < 2 and not nearBuilding(result.Position, 4) then
 		return result.Position
 	end
 	return nil
@@ -675,30 +827,34 @@ local function teleportTo(pos: Vector3)
 	sidestepUntil = 0
 end
 
--- 플레이어 등 뒤, 시야 밖 어딘가로 순간이동
+-- 오래 아무도 못 찾았을 때: 아무도 안 보는 사이, 누군가의 등 뒤 먼 곳으로 조용히 자리를 옮김.
+-- (눈앞에서 사라지거나 나타나지는 않아요)
 local function ambush(): boolean
+	if not root or not hiddenFromEveryone(root.Position) then
+		return false
+	end
 	local candidates = {}
 	for _, player in Players:GetPlayers() do
 		local _, hrp = aliveCharacter(player)
 		if hrp then
-			table.insert(candidates, { player = player, hrp = hrp })
+			table.insert(candidates, hrp)
 		end
 	end
 	if #candidates == 0 then
 		return false
 	end
 	local pick = candidates[rng:NextInteger(1, #candidates)]
-	local look = pick.hrp.CFrame.LookVector
+	local look = pick.CFrame.LookVector
 	look = Vector3.new(look.X, 0, look.Z)
 	look = if look.Magnitude > 0.1 then look.Unit else Vector3.new(0, 0, -1)
 	for _ = 1, 10 do
 		local dist = rng:NextNumber(C.AmbushDistance[1], C.AmbushDistance[2])
 		local angle = rng:NextNumber(-0.9, 0.9)
 		local dir = (CFrame.Angles(0, angle, 0) * -look)
-		local ground = groundAt(pick.hrp.Position + dir * dist)
+		local ground = groundAt(pick.Position + dir * dist)
 		if ground and hiddenFromEveryone(ground) then
 			teleportTo(ground)
-			investigatePos = pick.hrp.Position
+			investigatePos = pick.Position
 			investigateStart = os.clock()
 			setState("Investigate")
 			return true
@@ -707,23 +863,34 @@ local function ambush(): boolean
 	return false
 end
 
--- 연기처럼 사라졌다가 먼 곳에 나타남
-local function vanish()
-	if not root then
-		return
-	end
-	effect:FireAllClients("Vanish", root.Position)
+-- 아무도 안 보는 먼 곳으로 자리를 옮김
+local function relocateFar()
 	for _ = 1, 15 do
 		local half = map.HalfSize - 40
 		local ground = groundAt(Vector3.new(rng:NextNumber(-half, half), 0, rng:NextNumber(-half, half)))
 		if ground and hiddenFromEveryone(ground) then
 			teleportTo(ground)
-			break
+			return
 		end
 	end
-	wanderGoal = nil
-	setState("Wander")
-	lastTargetTime = os.clock() - C.AmbushAfter * 0.5 -- 잠시 뒤 다시 기습하러 옴
+end
+
+-- from 에서 멀어지는 쪽으로 걸어서 물러남
+local function startRetreat(from: Vector3, now: number)
+	retreatFrom = from
+	retreatUntil = now + 8
+	target = nil
+	setState("Retreat")
+end
+
+local function beginChase(player: Player, hrp: BasePart, now: number)
+	target = player
+	lastSeenPos = hrp.Position
+	lastSeenVel = hrp.AssemblyLinearVelocity
+	lastSeenTime = now
+	lastTargetTime = now
+	chaseGoal = nil
+	setState("Chase")
 end
 
 local function faceTowards(pos: Vector3)
@@ -756,7 +923,6 @@ local function update()
 		humanoid:MoveTo(root.Position)
 		return
 	elseif state == "Stunned" then
-		setEyes(EYE)
 		setState("Wander")
 	end
 
@@ -788,7 +954,7 @@ local function update()
 				searchTarget = nil
 				if victim and victim:GetAttribute("Hiding") == true and rng:NextNumber() < C.ClosetSearchChance and MonsterAI.onClosetRipped then
 					MonsterAI.onClosetRipped(victim)
-					effect:FireAllClients("Scream", root.Position)
+					scream()
 				else
 					wanderGoal = nil
 					setState("Wander")
@@ -798,32 +964,86 @@ local function update()
 		return
 	end
 
-	-- 지켜보기
+	-- 지켜보기: 쳐다보면 굳고, 눈을 떼면 다가옴
 	if state == "Stalk" then
-		humanoid.WalkSpeed = 0
-		humanoid:MoveTo(root.Position)
+		local victim = stalkTarget
+		local char: Model? = nil
 		local hrp: BasePart? = nil
-		if stalkTarget then
-			local _, found = aliveCharacter(stalkTarget)
-			hrp = found
+		if victim then
+			char, hrp = aliveCharacter(victim)
 		end
-		if not hrp then
-			vanish()
+		if not (victim and char and hrp) then
+			startRetreat(root.Position - root.CFrame.LookVector * 10, now)
 			return
 		end
-		faceTowards(hrp.Position)
 		local dist = (hrp.Position - root.Position).Magnitude
-		if now > stalkUntil or dist < 22 then
-			if rng:NextNumber() < 0.5 then
-				target = stalkTarget
-				lastSeenPos = hrp.Position
-				lastSeenTime = now
-				setState("Chase")
-				lungeUntil = now + C.LungeTime
-				lastLunge = now
-			else
-				vanish()
+		local watched = isWatchedBy(victim, char, hrp)
+		model:SetAttribute("Frozen", watched)
+		lastTargetTime = now
+		if watched then
+			humanoid.WalkSpeed = 0
+			humanoid:MoveTo(root.Position)
+			faceTowards(hrp.Position)
+			stalkWatched += TICK
+			if stalkWatched >= C.StareBreakTime then
+				if dist < C.StareChargeRange or rng:NextNumber() < 0.3 then
+					-- 너무 가까이서 오래 쳐다봄 → 덮침
+					beginChase(victim, hrp, now)
+					lungeUntil = now + C.LungeTime
+					lastLunge = now
+				else
+					startRetreat(hrp.Position, now)
+				end
 			end
+			return
+		end
+		stalkWatched = math.max(0, stalkWatched - TICK * 0.5)
+		if flatSpeed(hrp) > 18 and dist < C.FleeTriggerRange then
+			-- 등을 보이고 뜀 → 사냥 본능
+			beginChase(victim, hrp, now)
+			return
+		end
+		if dist < C.CreepStrikeRange then
+			beginChase(victim, hrp, now)
+			lungeUntil = now + C.LungeTime
+			lastLunge = now
+			return
+		end
+		if now > stalkUntil then
+			if dist < 45 then
+				beginChase(victim, hrp, now)
+			else
+				startRetreat(hrp.Position, now)
+			end
+			return
+		end
+		humanoid.WalkSpeed = C.CreepSpeed * (if crouching then 0.75 else 1)
+		moveTo(hrp.Position)
+		return
+	end
+
+	-- 물러나기: 어둠 속으로 걸어가다가, 아무도 안 볼 때 다른 곳으로 자리를 옮김
+	if state == "Retreat" then
+		local from = retreatFrom or root.Position
+		local away = Vector3.new(root.Position.X - from.X, 0, root.Position.Z - from.Z)
+		if away.Magnitude < 1 then
+			local look = root.CFrame.LookVector
+			away = Vector3.new(-look.X, 0, -look.Z)
+		end
+		local goal = root.Position + away.Unit * 30
+		local half = map.HalfSize - 25
+		goal = Vector3.new(math.clamp(goal.X, -half, half), goal.Y, math.clamp(goal.Z, -half + 20, half))
+		humanoid.WalkSpeed = chaseSpeed() * (if crouching then 0.6 else 1)
+		moveTo(goal)
+		local unseen = hiddenFromEveryone(root.Position)
+		if (unseen and now > retreatUntil - 6.5) or now > retreatUntil then
+			if unseen then
+				relocateFar()
+			end
+			lastStalk = now
+			lastTargetTime = now - C.AmbushAfter * 0.5 -- 잠시 뒤 다시 찾아옴
+			wanderGoal = nil
+			setState("Wander")
 		end
 		return
 	end
@@ -835,34 +1055,24 @@ local function update()
 			and now > graceUntil
 			and dist > C.StalkMinDistance
 			and now - lastStalk > C.StalkCooldown
-			and rng:NextNumber() < C.StalkChance
+			and rng:NextNumber() < C.StalkChance * (if finale then 0.4 else 1)
 		if canStalk then
 			stalkTarget = player
 			stalkUntil = now + rng:NextNumber(C.StalkTime[1], C.StalkTime[2])
+			stalkWatched = 0
 			lastStalk = now
+			lastTargetTime = now
 			setState("Stalk")
 			return
 		end
-		target = player
-		lastSeenPos = hrp.Position
-		lastSeenVel = hrp.AssemblyLinearVelocity
-		lastSeenTime = now
-		lastTargetTime = now
-		chaseGoal = nil
-		setState("Chase")
+		beginChase(player, hrp, now)
 	else
 		-- 안 보여도 소리로 알아챔
 		local heardPlayer, heardHrp, heardDist = findHeard()
 		if heardPlayer and heardHrp then
-			if state == "Chase" or state == "Hunt" or heardDist < C.HearRange then
+			if state == "Chase" or state == "Hunt" or heardDist < C.CloseSenseRange then
 				-- 쫓던 중이면 발소리를 따라 계속 쫓음 (벽 뒤라도 길찾기로 돌아옴)
-				target = heardPlayer
-				lastSeenPos = heardHrp.Position
-				lastSeenVel = heardHrp.AssemblyLinearVelocity
-				lastSeenTime = now
-				lastTargetTime = now
-				chaseGoal = nil
-				setState("Chase")
+				beginChase(heardPlayer, heardHrp, now)
 			elseif state == "Wander" or state == "Investigate" then
 				-- 멀리서 발소리만 들림 → 확인하러 감
 				investigatePos = heardHrp.Position
@@ -893,7 +1103,7 @@ local function update()
 		if direct and dist > 12 and dist < 30 and now - lastLunge > C.LungeCooldown and rng:NextNumber() < 0.3 then
 			lastLunge = now
 			lungeUntil = now + C.LungeTime
-			effect:FireAllClients("Scream", root.Position)
+			scream()
 		end
 		local speed = chaseSpeed()
 		if now < lungeUntil and direct then
@@ -975,9 +1185,6 @@ local function buildFromAsset(position: Vector3): Model?
 			d.Anchored = false
 			d.CanCollide = d == hrp
 			d.Massless = d ~= hrp
-			if d.Name:lower():find("eye") then
-				table.insert(eyes, d)
-			end
 		end
 	end
 	hrp.Transparency = 1
@@ -1002,7 +1209,6 @@ local function buildFromAsset(position: Vector3): Model?
 end
 
 local function spawnMonster()
-	eyes = {}
 	model = buildFromAsset(map.MonsterSpawn) or buildModel(map.MonsterSpawn)
 	humanoid = (model :: Model):FindFirstChildOfClass("Humanoid")
 	root = (model :: Model).PrimaryPart
@@ -1024,6 +1230,8 @@ local function spawnMonster()
 	sidestepUntil = 0
 	normalHip = (humanoid :: Humanoid).HipHeight
 	stalkTarget = nil
+	stalkWatched = 0
+	retreatFrom = nil
 	searchPos, searchTarget, searchArrived = nil, nil, nil
 end
 
@@ -1038,6 +1246,7 @@ function MonsterAI.start()
 	MonsterAI.stop()
 	running = true
 	rage = 0
+	finale = false
 	local myGeneration = generation
 	spawnMonster()
 	task.spawn(function()
@@ -1046,7 +1255,7 @@ function MonsterAI.start()
 			if not ok then
 				warn("[MonsterAI]", err)
 			end
-			task.wait(0.2)
+			task.wait(TICK)
 		end
 	end)
 end
@@ -1088,7 +1297,6 @@ function MonsterAI.damage(amount: number, byPlayer: Player?)
 		downedUntil = os.clock() + C.DownedTime
 		humanoid.PlatformStand = true
 		humanoid:MoveTo(root.Position)
-		setEyes(Color3.fromRGB(60, 10, 10))
 		notify:FireAllClients(("숲지기가 쓰러졌다! %d초 안에 봉인 말뚝을 박아라!"):format(C.DownedTime))
 		return
 	end
@@ -1112,7 +1320,6 @@ function MonsterAI.stun(seconds: number)
 	end
 	setState("Stunned")
 	stunnedUntil = math.max(stunnedUntil, os.clock() + seconds)
-	setEyes(Color3.fromRGB(80, 80, 255))
 end
 
 -- 소리가 나면 조사하러 옴 (추격 중이면 무시)
@@ -1130,6 +1337,20 @@ end
 -- 탈출 진행도가 오를수록 빨라짐
 function MonsterAI.setRage(level: number)
 	rage = level
+end
+
+-- 마지막 막(폭풍): 더 빠르고, 지켜보기보다 바로 쫓아옴
+function MonsterAI.setFinale(on: boolean)
+	finale = on
+end
+
+function MonsterAI.getState(): string
+	return state
+end
+
+-- 괴물이 지금 이 플레이어를 노리고 있는지 (Director 가 가짜 공포 연출을 미룰 때 씀)
+function MonsterAI.isAfter(player: Player): boolean
+	return (state == "Chase" and target == player) or (state == "Stalk" and stalkTarget == player) or (state == "Search" and searchTarget == player)
 end
 
 -- 플레이어가 옷장에 숨었을 때 Hiding이 부름. 쫓던 중이었다면 옷장을 뒤지러 옴

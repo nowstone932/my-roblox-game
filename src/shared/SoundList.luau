@@ -120,7 +120,7 @@ SoundList.Sounds = {
 -- id 칸 값을 실제 SoundId 문자열로 바꿔줌. 비어 있으면 nil
 function SoundList.toSoundId(id: any): string?
 	if typeof(id) == "number" and id > 0 then
-		return "rbxassetid://" .. math.floor(id)
+		return string.format("rbxassetid://%d", id)
 	elseif typeof(id) == "string" and id ~= "" then
 		if id:match("^%d+$") then
 			return "rbxassetid://" .. id

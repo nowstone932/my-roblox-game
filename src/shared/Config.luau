@@ -77,8 +77,10 @@ Config.Monster = {
 	ClosetSearchChance = 0.35, -- 숨는 걸 들켰을 때 옷장을 열어젖힐 확률
 	ClosetSearchDamage = 40,
 
-	-- 시작 유예(1막): 라운드가 시작되고 이 시간(초) 동안은 괴물이 자기 둥지(제단) 근처만 돌아다님
-	StartGrace = 75,
+	-- 시작 유예(1막): 라운드가 시작되고 이 시간(초) 동안은 괴물이 자기 둥지(제단) 근처만 돌아다니고,
+	-- 아무도 쫓지 않아요. (둥지 근처를 어슬렁거리다 GraceChaseRange 안으로 들어온 사람만 알아챔)
+	StartGrace = 150,
+	GraceChaseRange = 35,
 
 	HuntTime = 18, -- 놓친 뒤 마지막으로 본 곳 주변을 뒤지는 시간(초)
 	HuntRadius = 28, -- 뒤지는 범위(스터드). 근처 건물 안도 들어가서 확인함

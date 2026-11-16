@@ -138,7 +138,7 @@ local function loadTracks(model: Model): boolean
 		if id ~= 0 and not tracks[name] then
 			local anim = Instance.new("Animation")
 			anim.Name = name
-			anim.AnimationId = "rbxassetid://" .. tostring(id)
+			anim.AnimationId = string.format("rbxassetid://%d", id) -- 긴 번호가 1.2e+14 꼴로 바뀌지 않게
 			load(name, anim)
 		end
 	end

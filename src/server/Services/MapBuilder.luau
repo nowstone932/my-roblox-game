@@ -53,13 +53,13 @@ local function setupLighting()
 	Lighting.ClockTime = 0.8
 	Lighting.GeographicLatitude = 40
 	Lighting.Brightness = A.MoonBrightness
-	Lighting.Ambient = Color3.fromRGB(7, 8, 12)
-	Lighting.OutdoorAmbient = Color3.fromRGB(17, 20, 30)
+	Lighting.Ambient = Color3.fromRGB(12, 14, 20)
+	Lighting.OutdoorAmbient = Color3.fromRGB(32, 37, 54)
 	Lighting.ColorShift_Top = Color3.fromRGB(20, 28, 48)
 	Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
 	Lighting.EnvironmentDiffuseScale = 0.12
 	Lighting.EnvironmentSpecularScale = 0.35 -- 젖은 듯한 반사
-	Lighting.ExposureCompensation = -0.2
+	Lighting.ExposureCompensation = 0.1
 	Lighting.ShadowSoftness = 0.35
 	Lighting.GlobalShadows = true
 	-- (Atmosphere 가 없을 때를 대비한 옛 방식 안개)
@@ -93,7 +93,7 @@ local function setupLighting()
 	cc.Name = "BaseColor"
 	cc.Saturation = -0.3
 	cc.Contrast = 0.12
-	cc.Brightness = -0.02
+	cc.Brightness = 0.02
 	cc.TintColor = Color3.fromRGB(222, 230, 255)
 	cc.Parent = Lighting
 

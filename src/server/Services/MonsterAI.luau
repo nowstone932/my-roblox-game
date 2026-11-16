@@ -141,8 +141,8 @@ end
 ---------------------------------------------------------------------------
 local BONE = Color3.fromRGB(198, 190, 170)
 local OLD_BONE = Color3.fromRGB(150, 140, 118)
-local BODY = Color3.fromRGB(24, 20, 18)
-local HIDE = Color3.fromRGB(46, 38, 32)
+local BODY = Color3.fromRGB(54, 48, 45)
+local HIDE = Color3.fromRGB(80, 70, 60)
 local MOSS = Color3.fromRGB(38, 48, 30)
 local BONE_MAT = Enum.Material.Sandstone
 
@@ -1049,6 +1049,11 @@ local function update()
 	end
 
 	local player, hrp = findTarget()
+	-- 1막(시작 유예) 동안은 가까이 다가온 사람만 알아챔. 멀리서는 쫓지 않음
+	local inGrace = now < graceUntil
+	if inGrace and player and hrp and (hrp.Position - root.Position).Magnitude > C.GraceChaseRange then
+		player, hrp = nil, nil
+	end
 	if player and hrp then
 		local dist = (hrp.Position - root.Position).Magnitude
 		local canStalk = (state == "Wander" or state == "Investigate")
@@ -1069,6 +1074,9 @@ local function update()
 	else
 		-- 안 보여도 소리로 알아챔
 		local heardPlayer, heardHrp, heardDist = findHeard()
+		if inGrace and heardDist > C.GraceChaseRange then
+			heardPlayer, heardHrp = nil, nil
+		end
 		if heardPlayer and heardHrp then
 			if state == "Chase" or state == "Hunt" or heardDist < C.CloseSenseRange then
 				-- 쫓던 중이면 발소리를 따라 계속 쫓음 (벽 뒤라도 길찾기로 돌아옴)

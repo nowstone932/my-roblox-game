@@ -122,7 +122,7 @@ function Hud.init(callbacks: Callbacks)
 	flashFrame = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 20, Parent = gui })
 
 	topLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 44), Size = UDim2.fromOffset(760, 30), TextSize = 22, Parent = gui })
-	crosshair = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(30, 30), Text = "·", TextSize = 34, Parent = gui })
+	crosshair = label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(30, 30), Text = "", TextSize = 34, Parent = gui })
 	hidingLabel = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.62, 0), Size = UDim2.fromOffset(500, 30), TextSize = 20, TextColor3 = Color3.fromRGB(180, 200, 255), Visible = false, Parent = gui })
 
 	-- 달리기 기력
@@ -599,7 +599,7 @@ function Hud.hitMarker()
 	crosshair.Text = "✕"
 	crosshair.TextColor3 = Color3.fromRGB(255, 60, 60)
 	task.delay(0.15, function()
-		crosshair.Text = "·"
+		crosshair.Text = "" -- 평소에는 가운데 점을 보이지 않음
 		crosshair.TextColor3 = Color3.fromRGB(230, 230, 230)
 	end)
 end

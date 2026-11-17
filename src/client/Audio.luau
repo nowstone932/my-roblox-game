@@ -16,6 +16,7 @@ local SoundList = require(ReplicatedStorage.Shared.SoundList)
 local Audio = {}
 
 local folder: Folder
+local groups: { [string]: SoundGroup } = {}
 local templates: { [string]: Sound } = {}
 local failed: { [string]: boolean } = {}
 
@@ -37,6 +38,8 @@ function Audio.init()
 
 	local musicGroup = makeGroup("Music", SoundList.MasterVolume.Music)
 	local effectsGroup = makeGroup("Effects", SoundList.MasterVolume.Effects)
+	groups.Music = musicGroup
+	groups.Effects = effectsGroup
 
 	local namesById: { [string]: { string } } = {}
 	local toLoad = {}
@@ -82,6 +85,18 @@ function Audio.init()
 			warn("[소리] 불러오지 못한 소리가 있어요 (그 소리만 꺼집니다). src/shared/SoundList.luau 에서 ID를 바꿔보세요: " .. table.concat(bad, ", "))
 		end
 	end)
+end
+
+-- 설정 창의 소리 크기 (0~100). 70 이 원래 크기이고, 100 이면 조금 더 크게 들려요.
+-- kind: "Effects"(효과음) 또는 "Music"(배경음악/배경음)
+Audio.DefaultPercent = 70
+
+function Audio.setVolume(kind: string, percent: number)
+	local group = groups[kind]
+	local base = (SoundList.MasterVolume :: any)[kind]
+	if group and base then
+		group.Volume = base * math.clamp(percent, 0, 100) / Audio.DefaultPercent
+	end
 end
 
 function Audio.has(name: string): boolean

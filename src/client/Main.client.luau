@@ -5,17 +5,21 @@
 --   Immersion   화면 가장자리 어둠, 걸음 출렁임   Weather     비, 번개, 안개
 --   Scares      공포 연출 (발소리, 형체…)      MonsterAnimator 괴물 움직임
 --   Audio       소리와 배경음악             Hud         화면 글씨/창
+--   Settings    설정 창 (언어, 소리 크기)      MapUi       지도
 --
 -- 조작: [F] 손전등  [R] 건전지 교체  [Shift] 달리기  [Ctrl] 웅크리기  [C] 제작  [Q] 목표 보기
+--       [M] 지도  [P] 설정  [E] 쪽지 닫기  [Enter] 대기실에서 지금 출발
 
 local ContextActionService = game:GetService("ContextActionService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Lang = require(ReplicatedStorage.Shared.Lang)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Story = require(ReplicatedStorage.Shared.Story)
 local Audio = require(script.Parent.Audio)
@@ -23,8 +27,10 @@ local Flashlight = require(script.Parent.Flashlight)
 local Hud = require(script.Parent.Hud)
 local Immersion = require(script.Parent.Immersion)
 local Lights = require(script.Parent.Lights)
+local MapUi = require(script.Parent.MapUi)
 local MonsterAnimator = require(script.Parent.MonsterAnimator)
 local Scares = require(script.Parent.Scares)
+local Settings = require(script.Parent.Settings)
 local Spectate = require(script.Parent.Spectate)
 local Weather = require(script.Parent.Weather)
 
@@ -69,8 +75,17 @@ Hud.init({
 	buyProduct = function(productId)
 		MarketplaceService:PromptProductPurchase(player, productId)
 	end,
+	lobbyStart = function()
+		Remotes.get("LobbyStart"):FireServer()
+	end,
 })
 Audio.init()
+Settings.init() -- Audio 다음에 (소리 크기를 적용해야 하므로)
+MapUi.init()
+-- 마우스로 눌러야 하는 창이 떠 있을 때만 커서를 보여줌. 그 밖에는 1인칭이라 숨김
+Immersion.wantCursor = function()
+	return Settings.isActive() or Hud.wantsCursor() or Spectate.isActive()
+end
 Immersion.start()
 Weather.start()
 Lights.start(function()
@@ -101,9 +116,72 @@ Remotes.get("Notify").OnClientEvent:Connect(function(text: string)
 		Hud.notify(text)
 	end
 end)
+---------------------------------------------------------------------------
+-- 쪽지: [E]로 닫기 (1인칭이라 마우스 커서가 없으므로 키보드로 닫음)
+---------------------------------------------------------------------------
+local noteOpenedAt: Vector3? = nil
+
+-- 쪽지를 읽는 동안에는 줍기/읽기 표시(E)를 꺼 둠. 안 그러면 E를 눌러 닫자마자 쪽지를 또 읽게 됨
+Hud.onNoteClosed = function()
+	noteOpenedAt = nil
+	ContextActionService:UnbindAction("CloseNote")
+	task.delay(0.3, function()
+		if not Hud.isNoteOpen() then
+			ProximityPromptService.Enabled = true
+		end
+	end)
+end
+
 Remotes.get("ShowNote").OnClientEvent:Connect(function(noteId: string)
 	Audio.play("NoteOpen")
-	Hud.showNote(noteId)
+	if noteId == "Map" then
+		-- 중앙 캠프 게시판의 지도
+		Hud.closeNote()
+		Hud.setCraftOpen(false)
+		MapUi.open()
+		return
+	end
+	if not Hud.showNote(noteId) then
+		return
+	end
+	MapUi.close()
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	noteOpenedAt = if root and root:IsA("BasePart") then root.Position else nil
+	ProximityPromptService.Enabled = false
+	ContextActionService:BindActionAtPriority("CloseNote", function(_, inputState)
+		if inputState == Enum.UserInputState.Begin then
+			Hud.closeNote()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, 3000, Enum.KeyCode.E, Enum.KeyCode.ButtonB)
+end)
+
+-- 쪽지를 펴 둔 채로 멀리 걸어가면 저절로 접힘
+RunService.Heartbeat:Connect(function()
+	if noteOpenedAt and Hud.isNoteOpen() then
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not (root and root:IsA("BasePart")) or (root.Position - noteOpenedAt).Magnitude > 14 then
+			Hud.closeNote()
+		end
+	end
+end)
+
+-- 영어로 바꿨을 때 줍기/읽기 표시(E)의 글씨도 번역
+type PromptText = { action: string, object: string, shownAction: string, shownObject: string }
+local promptTexts: { [ProximityPrompt]: PromptText } = setmetatable({}, { __mode = "k" }) :: any
+ProximityPromptService.PromptShown:Connect(function(prompt)
+	local saved = promptTexts[prompt]
+	-- 처음 보는 표시이거나, 서버가 글씨를 바꿨으면(숨기 ↔ 나오기 등) 지금 글씨를 한국어 원문으로 삼음
+	if not saved or (prompt.ActionText ~= saved.action and prompt.ActionText ~= saved.shownAction) or (prompt.ObjectText ~= saved.object and prompt.ObjectText ~= saved.shownObject) then
+		saved = { action = prompt.ActionText, object = prompt.ObjectText, shownAction = "", shownObject = "" }
+		promptTexts[prompt] = saved
+	end
+	saved.shownAction = Lang.t(saved.action)
+	saved.shownObject = Lang.t(saved.object)
+	prompt.ActionText = saved.shownAction
+	prompt.ObjectText = saved.shownObject
 end)
 Remotes.get("StoryEvent").OnClientEvent:Connect(function(kind: string, endingId: string?)
 	if inLobby() then
@@ -369,9 +447,45 @@ end, true, Enum.KeyCode.R, Enum.KeyCode.DPadRight)
 
 bind("CraftMenu", "제작", function(began)
 	if began then
-		Hud.setCraftOpen(not Hud.isCraftOpen())
+		if Hud.isNoteOpen() then
+			Hud.closeNote()
+		else
+			MapUi.close()
+			Hud.setCraftOpen(not Hud.isCraftPanelOpen())
+		end
 	end
 end, true, Enum.KeyCode.C, Enum.KeyCode.ButtonY)
+
+bind("Map", "지도", function(began)
+	if not began or inLobby() then
+		return
+	end
+	if MapUi.isOpen() then
+		MapUi.close()
+	elseif MapUi.hasMap() then
+		Hud.closeNote()
+		Hud.setCraftOpen(false)
+		MapUi.open()
+	else
+		Hud.notify("지도가 없다 — 벌목 캠프 한가운데 게시판에서 챙길 수 있다")
+	end
+end, true, Enum.KeyCode.M, Enum.KeyCode.DPadDown)
+
+-- 설정 창 조작 시작/끝 (터치 기기는 창을 바로 누르면 되므로 화면 버튼을 만들지 않음)
+ContextActionService:BindAction("Settings", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		Settings.toggle()
+	end
+	return Enum.ContextActionResult.Sink
+end, false, Enum.KeyCode.P)
+
+-- 대기실: "지금 출발" (버튼이 떠 있을 때만)
+ContextActionService:BindAction("LobbyStart", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin and Hud.canLobbyStart() then
+		Remotes.get("LobbyStart"):FireServer()
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.Return, Enum.KeyCode.KeypadEnter, Enum.KeyCode.ButtonX)
 
 bind("Sprint", "달리기", function(began)
 	sprinting = began and stamina > 0.1

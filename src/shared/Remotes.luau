@@ -14,6 +14,8 @@ local NAMES = {
 	"LobbyNotify", -- 서버 -> 클라: 대기실/구매 안내 (text). Notify와 달리 대기실에서도 보임
 	"SetLight", -- 클라 -> 서버: 손전등 켬/끔 (on). 괴물이 불빛을 알아보고, 동료 눈에도 보이게 됨
 	"UseCell", -- 클라 -> 서버: 건전지 하나 갈아 끼우기
+	"LobbyStart", -- 클라 -> 서버: 대기실에서 "지금 출발" 버튼을 누름
+	"SaveSettings", -- 클라 -> 서버: 설정 저장 (언어, 효과음 %, 배경음 %)
 }
 
 local folder: Instance

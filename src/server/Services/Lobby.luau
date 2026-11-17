@@ -1,11 +1,16 @@
--- 대기실(로비) 방 관리
+-- 대기실(수색대 야영지) 천막 관리. 코드에서는 천막 하나를 "방(room)"이라고 불러요.
 --
--- 1. 방 바닥에 올라서면 그 방에 들어감 (꽉 찼으면 방 앞으로 밀려남)
--- 2. 첫 사람이 들어오면 카운트다운 시작 (Config.Lobby.Countdown 초)
--- 3. 0초가 되면 그 방에 있는 사람들만 함께 출발
---      - 게시된 게임: 그 방 사람들만 새 전용 서버로 순간이동 (TeleportService)
+-- 1. 천막 안(바닥 깔개 위)에 들어서면 그 천막에 들어감 (꽉 찼으면 천막 앞으로 밀려남)
+-- 2. 첫 사람이 들어오면 카운트다운 시작 (Config.Lobby.Countdown 초까지 기다림)
+-- 3. Config.Lobby.StartAfter 초가 지나면 "지금 출발" 버튼이 생김. 누르면 바로 출발
+-- 4. 0초가 되거나 버튼을 누르면 그 천막에 있는 사람들만 함께 출발
+--      - 게시된 게임: 그 천막 사람들만 새 전용 서버로 순간이동 (TeleportService)
 --      - Studio 테스트 / UseTeleport = false: 이 서버의 숲으로 바로 출발
--- 방에서 나가면 빠지고, 방이 비면 카운트다운이 취소돼요.
+-- 천막에서 걸어 나가면 빠지고, 천막이 비면 카운트다운이 취소돼요.
+-- (천막 안에서 점프하는 건 괜찮아요. 걸어서 밖으로 나가야 빠집니다)
+--
+-- 천막 앞 안내판과 화면 위 글씨는 클라이언트(client/Hud.luau)가 아래 속성을 보고 그립니다.
+--   ReplicatedStorage: LobbyRoom1Count, LobbyRoom1Status, LobbyRoom1Left, LobbyRoom1Start
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,6 +21,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local lobbyNotify = Remotes.get("LobbyNotify")
+local lobbyStart = Remotes.get("LobbyStart")
 
 local L = Config.Lobby
 
@@ -26,6 +32,7 @@ type Room = {
 	members: { Player },
 	status: string, -- "Empty" | "Counting" | "Waiting" | "Launching"
 	deadline: number?,
+	startedAt: number?, -- 카운트다운이 시작된 때
 }
 
 type Options = {
@@ -68,14 +75,17 @@ local function rootOf(player: Player): BasePart?
 	return nil
 end
 
-local function isInside(room: Room, player: Player): boolean
+-- margin: 이미 들어와 있는 사람은 이만큼 더 벗어나야 나간 것으로 침 (경계에서 들락날락하지 않게)
+-- 높이는 넉넉하게 봐서 점프해도 나간 것으로 치지 않아요.
+local function isInside(room: Room, player: Player, margin: number?): boolean
 	local hrp = rootOf(player)
 	if not hrp then
 		return false
 	end
 	local rel = room.info.center:PointToObjectSpace(hrp.Position)
 	local h = room.info.halfSize
-	return math.abs(rel.X) <= h.X and math.abs(rel.Z) <= h.Z and rel.Y >= -2 and rel.Y <= h.Y
+	local m = margin or 0
+	return math.abs(rel.X) <= h.X + m and math.abs(rel.Z) <= h.Z + m and rel.Y >= -4 and rel.Y <= h.Y
 end
 
 local function canJoinRooms(player: Player): boolean
@@ -94,41 +104,29 @@ end
 ---------------------------------------------------------------------------
 -- 화면/전광판 표시
 ---------------------------------------------------------------------------
-local function statusText(room: Room): string
-	local n = #room.members
-	if room.status == "Counting" and room.deadline then
-		return ("%d초 후 출발"):format(math.max(0, math.ceil(room.deadline - os.clock())))
-	elseif room.status == "Waiting" then
-		return "다른 팀이 숲에 있어요. 끝나면 출발"
-	elseif room.status == "Launching" then
-		return "출발!"
-	elseif n >= L.MaxPlayers then
-		return "꽉 참"
+local function canStartNow(room: Room): boolean
+	return room.status == "Counting" and room.startedAt ~= nil and os.clock() - room.startedAt >= L.StartAfter
+end
+
+local function setAttr(name: string, value: any)
+	if ReplicatedStorage:GetAttribute(name) ~= value then
+		ReplicatedStorage:SetAttribute(name, value)
 	end
-	return "들어오면 출발 준비"
 end
 
 local function publish(room: Room)
-	local i = room.info.index
+	local key = "LobbyRoom" .. room.info.index
 	local n = #room.members
-	local text = statusText(room)
-	local full = n >= L.MaxPlayers
-	local signText = ("방 %d   <font color=\"%s\">%d / %d명</font>\n%s"):format(
-		i,
-		if full then "#ff6060" else "#ffffff",
-		n,
-		L.MaxPlayers,
-		text
-	)
-	if room.info.sign.Text ~= signText then
-		room.info.sign.Text = signText
+	local left = 0
+	if room.status == "Counting" and room.deadline then
+		left = math.max(0, math.ceil(room.deadline - os.clock()))
 	end
-	room.info.pad.Transparency = if n > 0 then 0.25 else 0.55
-	-- 클라이언트 화면 위쪽 글씨용
-	local line = ("%d/%d명 · %s"):format(n, L.MaxPlayers, text)
-	if ReplicatedStorage:GetAttribute("LobbyRoom" .. i) ~= line then
-		ReplicatedStorage:SetAttribute("LobbyRoom" .. i, line)
-	end
+	setAttr(key .. "Count", n)
+	setAttr(key .. "Status", room.status)
+	setAttr(key .. "Left", left)
+	setAttr(key .. "Start", canStartNow(room))
+	-- 사람이 있는 천막은 등불이 밝아짐
+	room.info.lamp.Brightness = if n > 0 then 2.4 else 0.9
 end
 
 ---------------------------------------------------------------------------
@@ -149,6 +147,7 @@ local function removeMember(room: Room, player: Player, reason: string?)
 	if #room.members == 0 and (room.status == "Counting" or room.status == "Waiting") then
 		room.status = "Empty"
 		room.deadline = nil
+		room.startedAt = nil
 	end
 end
 
@@ -157,9 +156,10 @@ local function addMember(room: Room, player: Player)
 	player:SetAttribute("LobbyRoom", room.info.index)
 	if room.status == "Empty" then
 		room.status = "Counting"
-		room.deadline = os.clock() + L.Countdown
+		room.startedAt = os.clock()
+		room.deadline = room.startedAt + L.Countdown
 	end
-	sayRoom(room, ("%s 님이 방 %d에 들어왔어요 (%d/%d)"):format(player.DisplayName, room.info.index, #room.members, L.MaxPlayers))
+	sayRoom(room, ("%s 님이 %d번 천막에 들어왔어요 (%d/%d)"):format(player.DisplayName, room.info.index, #room.members, L.MaxPlayers))
 end
 
 local function bounce(room: Room, player: Player, text: string)
@@ -179,6 +179,7 @@ local function resetRoom(room: Room)
 	end
 	room.status = "Empty"
 	room.deadline = nil
+	room.startedAt = nil
 end
 
 local function teleportGroup(room: Room, group: { Player }): boolean
@@ -260,8 +261,8 @@ local function step()
 				local p = room.members[i]
 				if p.Parent ~= Players then
 					removeMember(room, p)
-				elseif not canJoinRooms(p) or not isInside(room, p) then
-					removeMember(room, p, ("방 %d에서 나왔어요"):format(room.info.index))
+				elseif not canJoinRooms(p) or not isInside(room, p, 2.5) then
+					removeMember(room, p, ("%d번 천막에서 나왔어요"):format(room.info.index))
 				end
 			end
 		end
@@ -273,9 +274,9 @@ local function step()
 			for _, room in rooms do
 				if isInside(room, player) then
 					if room.status == "Launching" then
-						bounce(room, player, "이 방은 지금 출발하는 중이에요")
+						bounce(room, player, "이 천막은 지금 출발하는 중이에요")
 					elseif #room.members >= L.MaxPlayers then
-						bounce(room, player, ("방 %d은(는) 꽉 찼어요 (최대 %d명). 다른 방으로 가세요"):format(room.info.index, L.MaxPlayers))
+						bounce(room, player, ("%d번 천막은 꽉 찼어요 (최대 %d명). 다른 천막으로 가세요"):format(room.info.index, L.MaxPlayers))
 					else
 						addMember(room, player)
 					end
@@ -304,7 +305,7 @@ function Lobby.init(info, opts: Options)
 	options = opts
 	lobbySpawn = info.spawn
 	for _, roomInfo in info.rooms do
-		local room: Room = { info = roomInfo, members = {}, status = "Empty", deadline = nil }
+		local room: Room = { info = roomInfo, members = {}, status = "Empty", deadline = nil, startedAt = nil }
 		table.insert(rooms, room)
 		publish(room)
 	end
@@ -317,10 +318,19 @@ function Lobby.init(info, opts: Options)
 		end
 	end)
 
+	-- "지금 출발" 버튼: 카운트다운이 StartAfter 초 넘게 흐른 천막에 있는 사람만 누를 수 있음
+	lobbyStart.OnServerEvent:Connect(function(player: Player)
+		local room = roomOf(player)
+		if room and canStartNow(room) then
+			sayRoom(room, ("%s 님이 출발 버튼을 눌렀어요"):format(player.DisplayName))
+			room.deadline = os.clock() -- 다음 확인 때 바로 출발
+		end
+	end)
+
 	TeleportService.TeleportInitFailed:Connect(function(player, result, message)
 		warn("[대기실] 순간이동 실패:", player.Name, result, message)
 		player:SetAttribute("Teleporting", nil)
-		say(player, "숲으로 이동하지 못했어요. 다시 방에 들어가 주세요")
+		say(player, "숲으로 이동하지 못했어요. 다시 천막에 들어가 주세요")
 	end)
 
 	task.spawn(function()

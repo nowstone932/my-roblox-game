@@ -1,8 +1,8 @@
 -- 서버 시작점. 각 기능(Service)을 순서대로 켭니다.
 --
 -- 이 게임은 장소(Place) 하나로 두 가지 서버 역할을 해요.
---   대기실 서버: 보통 서버. 대기실 + 방 4개. (Studio 테스트도 여기)
---   게임 서버  : 방 카운트다운이 끝나면 그 방 사람들만 순간이동해 오는 전용 서버. 숲에서 한 판.
+--   대기실 서버: 보통 서버. 수색대 야영지(모닥불 + 천막 4개). (Studio 테스트도 여기)
+--   게임 서버  : 천막 카운트다운이 끝나면 그 천막 사람들만 순간이동해 오는 전용 서버. 숲에서 한 판.
 
 local Services = script.Parent.Services
 
@@ -16,6 +16,7 @@ local Combat = require(Services.Combat)
 local Light = require(Services.Light)
 local Monetization = require(Services.Monetization)
 local GameLoop = require(Services.GameLoop)
+local Settings = require(Services.Settings)
 local Lobby = require(Services.Lobby)
 
 local isMatchServer = Lobby.isMatchServer()
@@ -30,6 +31,7 @@ MonsterAI.init(map)
 Hiding.init(map)
 Combat.init()
 Light.init()
+Settings.init()
 Monetization.init({
 	onRevive = GameLoop.revive,
 })

@@ -39,6 +39,7 @@ export type MapInfo = {
 	Truck: Model,
 	Radio: BasePart,
 	Helipad: BasePart,
+	MapBoard: BasePart, -- 중앙 캠프 게시판의 벌목장 지도
 	SafeRoom: BasePart,
 	MonsterSpawn: Vector3,
 	AltarPos: Vector3,
@@ -334,6 +335,18 @@ function MapBuilder.build(): MapInfo
 		local a = k * math.pi / 2 + 0.4
 		Build.part(camp, Vector3.new(6, 1.2, 1.2), CFrame.new(math.cos(a) * 7, 0.6, 100 + math.sin(a) * 7) * CFrame.Angles(0, -a, 0), C.Wood, Enum.Material.Wood)
 	end
+	-- 지도 게시판 (모닥불 옆). 여기서 지도를 챙기면 [M]으로 언제든 볼 수 있음 (Pickups.luau)
+	local boardCf = CFrame.lookAt(Vector3.new(13, 0, 110), Vector3.new(0, 0, 100))
+	for _, x in { -4.2, 4.2 } do
+		Build.part(camp, Vector3.new(0.6, 8, 0.6), boardCf * CFrame.new(x, 4, 0), C.DarkWood, Enum.Material.Wood)
+	end
+	Build.part(camp, Vector3.new(9.6, 0.5, 1.8), boardCf * CFrame.new(0, 8.2, 0) * CFrame.Angles(math.rad(8), 0, 0), C.Roof, Enum.Material.Wood, { CanCollide = false })
+	Build.part(camp, Vector3.new(8, 5.2, 0.3), boardCf * CFrame.new(0, 5, 0), C.Plank, Enum.Material.WoodPlanks)
+	local mapBoard = Build.part(camp, Vector3.new(6.4, 4.2, 0.1), boardCf * CFrame.new(0, 5, -0.2), Color3.fromRGB(214, 200, 164), Enum.Material.Fabric, { Name = "MapBoard", CanCollide = false })
+	Build.text(mapBoard, Enum.NormalId.Front, "흑송 벌목장\n안내도", Color3.fromRGB(70, 40, 28))
+	local boardLamp = Build.part(camp, Vector3.new(0.5, 0.7, 0.5), boardCf * CFrame.new(0, 7.5, -0.8), Color3.fromRGB(255, 170, 80), Enum.Material.Neon, { CanCollide = false, CanQuery = false })
+	Build.light(boardLamp, Color3.fromRGB(255, 160, 80), 14, 1, true)
+
 	addSpot("Campfire", Vector3.new(8, 0, 94))
 	addSpot("Campfire", Vector3.new(-9, 0, 107))
 	addSpot("Camp", Vector3.new(6, 0, 92))
@@ -873,6 +886,7 @@ function MapBuilder.build(): MapInfo
 		Truck = truck,
 		Radio = radio,
 		Helipad = helipad,
+		MapBoard = mapBoard,
 		SafeRoom = safeRoom,
 		-- 괴물 처음 위치: 제단 뒤쪽 (시작 지점에서 가장 먼 북동쪽). 처음 Config.Monster.StartGrace 초 동안은 이 근처만 돌아다님
 		MonsterSpawn = altarPos + Vector3.new(20, 4, -28),

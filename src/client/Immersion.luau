@@ -20,6 +20,9 @@ local camera = Workspace.CurrentCamera
 
 local Immersion = {}
 
+-- 마우스 커서가 보여야 하는지 알려주는 함수 (Main 이 넣어 줌). 없으면 1인칭에서는 항상 숨김
+Immersion.wantCursor = nil :: (() -> boolean)?
+
 export type State = {
 	active: boolean, -- 숲에서 살아 움직이는 중인지
 	fear: number, -- 0~1 (괴물이 가까울수록)
@@ -159,8 +162,10 @@ local function render(dt: number)
 		lastOffset = total
 	end
 
-	-- 1인칭으로 마우스가 잠겨 있을 때는 화면 가운데 커서를 숨김
-	UserInputService.MouseIconEnabled = UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter
+	-- 1인칭으로 마우스가 잠겨 있을 때는 화면 가운데 커서를 숨김.
+	-- 단, 마우스로 눌러야 하는 창(제작대, 설정…)이 열려 있는 동안에는 커서를 보여줌
+	local wanted = Immersion.wantCursor ~= nil and Immersion.wantCursor() == true
+	UserInputService.MouseIconEnabled = wanted or UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter
 end
 
 function Immersion.start()

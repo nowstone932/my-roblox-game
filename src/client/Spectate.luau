@@ -9,6 +9,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local Lang = require(game:GetService("ReplicatedStorage").Shared.Lang)
+
 local Spectate = {}
 
 local player = Players.LocalPlayer
@@ -164,7 +166,7 @@ local function update()
 	end
 	subjectRoot = root
 	camera.CameraType = Enum.CameraType.Scriptable
-	nameLabel.Text = ("관전 중: %s   [Q] / [E] 바꾸기"):format((subject :: Player).DisplayName)
+	nameLabel.Text = Lang.t("관전 중: %s   [Q] / [E] 바꾸기"):format((subject :: Player).DisplayName)
 
 	-- 동료의 어깨 뒤에서 동료가 보는 방향을 같이 봄
 	local char = (subject :: Player).Character

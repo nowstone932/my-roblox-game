@@ -212,6 +212,7 @@ local function spawnIntoRound(player: Player)
 	player:SetAttribute("InRound", true)
 	player:SetAttribute("Escaped", false)
 	player:SetAttribute("EscapeRoute", nil)
+	player:SetAttribute("HasMap", false) -- 지도는 중앙 캠프 게시판에서 챙겨야 함
 	player:LoadCharacter()
 	Monetization.applyRoundPerks(player)
 end
@@ -231,6 +232,7 @@ local function sendToLobby(player: Player)
 	player:SetAttribute("Escaped", false)
 	player:SetAttribute("EscapeRoute", nil)
 	player:SetAttribute("InLobby", true)
+	player:SetAttribute("HasMap", false)
 	Inventory.reset(player) -- 숲에서 주운 물건은 대기실로 못 가져감
 	player:LoadCharacter()
 	local char = player.Character

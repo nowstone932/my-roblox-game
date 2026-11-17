@@ -5,6 +5,7 @@
 --   쪽지: 고정 위치. E로 읽으면 화면에 내용이 뜸
 -- 플레이어가 죽으면 들고 있던 탈출 부품은 그 자리에 떨어집니다.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -209,6 +210,26 @@ function Pickups.init(mapInfo)
 		end
 	end
 	notes.Parent = map.Folder
+
+	-- 중앙 캠프 게시판의 지도: 한 명이 챙기면 같이 온 수색대 모두 [M]으로 볼 수 있음
+	local mapPrompt = Instance.new("ProximityPrompt")
+	mapPrompt.ActionText = "지도 보기"
+	mapPrompt.ObjectText = "벌목장 지도"
+	mapPrompt.MaxActivationDistance = 10
+	mapPrompt.RequiresLineOfSight = false
+	mapPrompt.Parent = map.MapBoard
+	mapPrompt.Triggered:Connect(function(player: Player)
+		if player:GetAttribute("InRound") ~= true then
+			return
+		end
+		for _, other in Players:GetPlayers() do
+			if other:GetAttribute("InMatch") == true and other:GetAttribute("HasMap") ~= true then
+				other:SetAttribute("HasMap", true)
+				notify:FireClient(other, "벌목장 지도를 챙겼다 — [M]으로 언제든 펼쳐 볼 수 있다")
+			end
+		end
+		showNote:FireClient(player, "Map") -- 지도를 펼쳐 보여줌
+	end)
 end
 
 -- 라운드 시작: 모두 지우고 새로 뿌림

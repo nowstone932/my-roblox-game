@@ -57,6 +57,31 @@ function Assets.clone(category: string, name: string, maxSize: number?): Model?
 			d:Destroy()
 		end
 	end
+	-- 한 부품에 SurfaceAppearance(색 입히기)가 여러 개 붙으면 Roblox가 그중 하나만 쓰는데,
+	-- 빈 것(그림 없음)이 뽑히면 모델이 하얗게 나옴. 애니메이션을 여러 번 가져올 때 이렇게 됨.
+	-- 그림이 있는 것이 하나라도 있으면 빈 것은 지워서 항상 진짜 색이 보이게 함.
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			local textured, empty = false, {}
+			for _, c in d:GetChildren() do
+				if c:IsA("SurfaceAppearance") then
+					local ok, map = pcall(function()
+						return c.ColorMap
+					end)
+					if ok and map ~= "" then
+						textured = true
+					elseif ok then
+						table.insert(empty, c)
+					end
+				end
+			end
+			if textured then
+				for _, c in empty do
+					c:Destroy()
+				end
+			end
+		end
+	end
 	if maxSize then
 		local size = model:GetExtentsSize()
 		local longest = math.max(size.X, size.Y, size.Z)

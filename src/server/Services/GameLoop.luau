@@ -497,9 +497,9 @@ function GameLoop.runMatchServer()
 	task.wait(10)
 	for _, player in Players:GetPlayers() do
 		player:Kick(
-			if player:GetAttribute("OptLang") == "en"
-				then "Could not move you back to the lobby. Please rejoin the game."
-				else "대기실로 이동하지 못했어요. 게임에 다시 들어와 주세요."
+			if player:GetAttribute("OptLang") == "ko"
+				then "대기실로 이동하지 못했어요. 게임에 다시 들어와 주세요."
+				else "Could not move you back to the lobby. Please rejoin the game."
 		)
 	end
 end

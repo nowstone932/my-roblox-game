@@ -24,7 +24,7 @@ local Settings = {}
 local STEP = 5 -- 막대 한 칸 (%)
 
 local values = {
-	lang = "ko",
+	lang = Lang.Default, -- 처음엔 영어
 	sfx = Audio.DefaultPercent,
 	music = Audio.DefaultPercent,
 }
@@ -262,14 +262,17 @@ function Settings.init()
 
 	-- 언어
 	local langRow = row(1, "lang")
+	local langCount = #Lang.Languages
 	for i, info in Lang.Languages do
 		local b = make("TextButton", {
-			Position = UDim2.new((i - 1) * 0.5, if i == 1 then 0 else 3, 0, 22),
-			Size = UDim2.new(0.5, -3, 0, 28),
+			Position = UDim2.new((i - 1) / langCount, if i == 1 then 0 else 3, 0, 22),
+			Size = UDim2.new(1 / langCount, -3, 0, 28),
 			BackgroundColor3 = Color3.fromRGB(44, 40, 38),
 			TextColor3 = Color3.fromRGB(240, 240, 240),
 			Font = Enum.Font.GothamMedium,
-			TextSize = 15,
+			TextSize = 14,
+			TextScaled = false,
+			TextWrapped = false,
 			Text = info.name,
 			Parent = langRow,
 		})
@@ -319,12 +322,16 @@ function Settings.init()
 	end)
 	Lang.onChanged(redraw)
 
-	-- 처음 접속: 저장된 설정이 없으면 Roblox 언어가 한국어일 때만 한국어, 아니면 영어로 시작
+	-- 처음 접속(저장된 설정 없음): 영어로 시작.
+	-- 단, Roblox 언어가 스페인어·포르투갈어면 그 말로 시작 (한국어는 설정에서 고름)
 	local ok, locale = pcall(function()
 		return LocalizationService.RobloxLocaleId
 	end)
-	if ok and typeof(locale) == "string" and locale:sub(1, 2) ~= "ko" then
-		values.lang = "en"
+	if ok and typeof(locale) == "string" then
+		local prefix = locale:sub(1, 2):lower()
+		if prefix == "es" or prefix == "pt" then
+			values.lang = prefix
+		end
 	end
 	apply()
 	redraw()
@@ -338,7 +345,7 @@ function Settings.init()
 		local lang = player:GetAttribute("OptLang")
 		local sfx = player:GetAttribute("OptSfx")
 		local music = player:GetAttribute("OptMusic")
-		if lang == "ko" or lang == "en" then
+		if Lang.isSupported(lang) then
 			values.lang = lang
 		end
 		if typeof(sfx) == "number" then

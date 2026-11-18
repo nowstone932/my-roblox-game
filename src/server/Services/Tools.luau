@@ -171,6 +171,7 @@ local function createTool(itemId: string, count: number): Tool
 	tool.CanBeDropped = false
 	tool.RequiresHandle = true
 	tool:SetAttribute("ItemId", itemId)
+	tool:SetAttribute("Count", count) -- 클라이언트가 이름을 언어에 맞게 다시 씀 (client/WorldText.luau)
 
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
@@ -233,6 +234,7 @@ function Tools.sync(player: Player, itemId: string)
 	if count > 0 then
 		if tool then
 			tool.Name = displayName(itemId, count)
+			tool:SetAttribute("Count", count)
 		else
 			local backpack = player:FindFirstChildOfClass("Backpack")
 			if backpack then

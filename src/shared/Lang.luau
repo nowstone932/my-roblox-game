@@ -1,4 +1,4 @@
--- 언어 바꾸기 (한국어 / English)
+-- 언어 바꾸기 (English / 한국어 / Español / Português)
 --
 -- 게임 안의 글은 전부 한국어로 쓰여 있고, 화면에 보여주기 직전에 이 모듈이 번역합니다.
 --   Lang.t("가방이 비었다")          -- 정해진 글 한 줄 번역 (영어 사전에 없으면 한국어 그대로)
@@ -8,25 +8,52 @@
 --
 -- 영어 문장은 src/shared/LangEn.luau 에 있어요. 새 글을 추가했으면 거기에 번역을 한 줄 넣으세요.
 -- (안 넣어도 오류는 안 나고, 그 글만 한국어로 보입니다)
+-- 스페인어·포르투갈어는 영어 문장을 한 번 더 번역합니다 (LangEs.luau, LangPt.luau).
+-- 거기 없는 글은 영어로 보여요.
+-- 처음 들어온 사람은 영어로 시작합니다 (client/Settings.luau 에서 정함).
 
 local En = require(script.Parent.LangEn)
 
-local Lang = {}
-
-Lang.Languages = {
-	{ code = "ko", name = "한국어" },
-	{ code = "en", name = "English" },
+-- 영어 다음 단계 번역 (영어 문장 → 그 나라 말)
+local FromEnglish: { [string]: { [string]: string } } = {
+	es = require(script.Parent.LangEs),
+	pt = require(script.Parent.LangPt),
 }
 
-local current = "ko"
+local Lang = {}
+
+-- 설정 창 버튼 순서
+Lang.Languages = {
+	{ code = "en", name = "English" },
+	{ code = "ko", name = "한국어" },
+	{ code = "es", name = "Español" },
+	{ code = "pt", name = "Português" },
+}
+
+Lang.Default = "en"
+
+local current = Lang.Default
 local listeners: { () -> () } = {}
 
 function Lang.get(): string
 	return current
 end
 
+-- 이 게임이 아는 언어 코드인지
+function Lang.isSupported(code: any): boolean
+	if typeof(code) ~= "string" then
+		return false
+	end
+	for _, info in Lang.Languages do
+		if info.code == code then
+			return true
+		end
+	end
+	return false
+end
+
 function Lang.set(code: string)
-	if code ~= "ko" and code ~= "en" then
+	if not Lang.isSupported(code) then
 		return
 	end
 	if code == current then
@@ -42,12 +69,22 @@ function Lang.onChanged(fn: () -> ())
 	table.insert(listeners, fn)
 end
 
+-- 영어 문장을 지금 언어로 (영어면 그대로)
+local function fromEnglish(english: string): string
+	local dict = FromEnglish[current]
+	return dict and dict[english] or english
+end
+
 -- 정해진 글 번역
 function Lang.t(text: string): string
 	if current == "ko" then
 		return text
 	end
-	return En[text] or text
+	local english = En[text]
+	if not english then
+		return text
+	end
+	return fromEnglish(english)
 end
 
 ---------------------------------------------------------------------------
@@ -83,7 +120,7 @@ function Lang.message(text: string): string
 	end
 	local exact = En[text]
 	if exact then
-		return exact
+		return fromEnglish(exact)
 	end
 	if not rules then
 		rules = buildRules()
@@ -93,9 +130,10 @@ function Lang.message(text: string): string
 		if #captures > 0 then
 			local args = {}
 			for i, capture in captures do
-				args[i] = tonumber(capture) or En[capture] or capture
+				local english = En[capture]
+				args[i] = tonumber(capture) or (if english then fromEnglish(english) else capture)
 			end
-			local ok, result = pcall(string.format, rule.en, table.unpack(args))
+			local ok, result = pcall(string.format, fromEnglish(rule.en), table.unpack(args))
 			if ok then
 				return result
 			end

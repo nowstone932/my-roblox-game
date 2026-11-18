@@ -279,4 +279,10 @@ Config.Shop = {
 	},
 }
 
+-- 순위표(오른쪽 위 플레이어 목록) 칸 이름. 로블록스가 모두에게 같은 이름을 보여줘서 언어별로 못 바꾸니 두 말을 같이 씀
+Config.Stats = {
+	Escapes = "탈출 Escapes",
+	Tags = "인식표 Tags",
+}
+
 return Config

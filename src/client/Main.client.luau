@@ -7,6 +7,7 @@
 --   Audio       소리와 배경음악             Hud         화면 글씨/창
 --   Settings    설정 창 (언어, 소리 크기)      MapUi       지도
 --   Shop        로벅스 상점 (대기실 왼쪽)      Abilities   게임패스 능력 (추적기, 변신)
+--   WorldText   숲 속 표지판 글씨 번역
 --
 -- 조작: [F] 손전등  [R] 건전지 교체  [Shift] 달리기  [Ctrl] 웅크리기  [C] 제작  [Q] 목표 보기
 --       [M] 지도  [P] 설정  [E] 쪽지 닫기  [Enter] 대기실에서 지금 출발  [B] 대기실 상점
@@ -39,6 +40,7 @@ local Abilities = require(script.Parent.Abilities)
 local Spectate = require(script.Parent.Spectate)
 local TouchControls = require(script.Parent.TouchControls)
 local Weather = require(script.Parent.Weather)
+local WorldText = require(script.Parent.WorldText)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -90,6 +92,7 @@ Settings.init() -- Audio 다음에 (소리 크기를 적용해야 하므로)
 MapUi.init()
 Shop.init()
 Abilities.start({ notify = Hud.notify, flash = Hud.flash })
+WorldText.start() -- 숲 속 표지판 글씨도 언어 설정을 따라감
 -- 마우스로 눌러야 하는 창이 떠 있을 때만 커서를 보여줌. 그 밖에는 1인칭이라 숨김
 Immersion.wantCursor = function()
 	return Settings.isActive() or Shop.isActive() or Hud.wantsCursor() or Spectate.isActive()

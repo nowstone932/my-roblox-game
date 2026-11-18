@@ -67,7 +67,7 @@ local function setupLeaderstats(player: Player)
 	local stats = Instance.new("Folder")
 	stats.Name = "leaderstats"
 	local escapes = Instance.new("IntValue")
-	escapes.Name = "탈출"
+	escapes.Name = Config.Stats.Escapes -- 순위표 칸 이름 (언어별로 못 바꿔서 한국어+영어)
 	escapes.Parent = stats
 	-- TODO: DataStore로 저장하면 다시 접속해도 기록이 남아요
 	stats.Parent = player
@@ -151,7 +151,7 @@ end
 
 local function addEscape(player: Player)
 	local stats = player:FindFirstChild("leaderstats")
-	local escapes = stats and stats:FindFirstChild("탈출")
+	local escapes = stats and stats:FindFirstChild(Config.Stats.Escapes)
 	if escapes and escapes:IsA("IntValue") then
 		escapes.Value += 1
 	end
@@ -496,7 +496,11 @@ function GameLoop.runMatchServer()
 	end
 	task.wait(10)
 	for _, player in Players:GetPlayers() do
-		player:Kick("대기실로 이동하지 못했어요. 게임에 다시 들어와 주세요.")
+		player:Kick(
+			if player:GetAttribute("OptLang") == "en"
+				then "Could not move you back to the lobby. Please rejoin the game."
+				else "대기실로 이동하지 못했어요. 게임에 다시 들어와 주세요."
+		)
 	end
 end
 

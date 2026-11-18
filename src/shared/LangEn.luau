@@ -187,6 +187,18 @@ local En: { [string]: string } = {
 	-- 상점 / 게임패스 능력
 	-----------------------------------------------------------------------
 	["상점"] = "Shop",
+	["수색대 보급소"] = "Search party supply post",
+	["[B] 닫기   ·   소모품은 다음 판을 시작할 때 받아요"] = "[B] Close   ·   Consumables are handed out when your next round starts",
+	["소모품은 다음 판을 시작할 때 받아요"] = "Consumables are handed out when your next round starts",
+	["전체"] = "All",
+	["게임패스"] = "Passes",
+	["소모품"] = "Items",
+	["게임패스 · 한 번 사면 계속"] = "Game pass · yours forever",
+	["소모품 · 살 때마다 1개"] = "Consumable · one per purchase",
+	["쓰러졌을 때 구매"] = "Buy when down",
+	["추천"] = "Pick",
+	["인기"] = "Hot",
+	["팀"] = "Team",
 	["[B] 마우스로 구매"] = "[B] Use mouse to buy",
 	["[B] 닫기"] = "[B] Close",
 	["구매"] = "Buy",

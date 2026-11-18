@@ -23,6 +23,9 @@ local Immersion = {}
 -- 마우스 커서가 보여야 하는지 알려주는 함수 (Main 이 넣어 줌). 없으면 1인칭에서는 항상 숨김
 Immersion.wantCursor = nil :: (() -> boolean)?
 
+-- 3인칭으로 볼 때 카메라를 옮길 거리 (위, 뒤). 숲지기 변신 중에 Abilities 가 넣어 줌. 평소에는 0
+Immersion.thirdPerson = Vector3.zero
+
 export type State = {
 	active: boolean, -- 숲에서 살아 움직이는 중인지
 	fear: number, -- 0~1 (괴물이 가까울수록)
@@ -133,6 +136,7 @@ local function render(dt: number)
 		elseif state.crouching then
 			offset = Vector3.new(0, -1.7, 0)
 		end
+		offset += Immersion.thirdPerson
 		hum.CameraOffset = hum.CameraOffset:Lerp(offset, math.min(1, dt * 8))
 
 		-- 걸음에 맞춰 화면이 출렁임

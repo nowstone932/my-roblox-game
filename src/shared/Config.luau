@@ -252,6 +252,8 @@ Config.Shop = {
 
 	DisguiseTime = 20, -- 변신이 유지되는 시간(초)
 	DisguisePerRound = 1, -- 한 판에 변신할 수 있는 횟수
+	DisguiseHeight = 14, -- 변신했을 때 키(스터드). 진짜 숲지기는 Config.MonsterModel.Height (16)
+	DisguiseCamera = Vector3.new(0, 4, 16), -- 변신 중 3인칭 카메라: 위로, 뒤로 떨어진 거리
 
 	-- 손전등 불빛 색 (상점에서 누를 때마다 다음 색으로)
 	LightColors = {
@@ -264,15 +266,16 @@ Config.Shop = {
 
 	-- 상점에 보이는 순서. price 는 가격을 못 불러왔을 때만 보이는 숫자예요 (진짜 가격은 Creator Hub에서 정함)
 	--   kind "Pass" = 게임패스, "Product" = 개발자 상품 / idKey = 위 Config.Monetization 의 이름
+	--   icon = 카드에 보이는 그림 글자, tint = 그림 바탕색, tag = 이름 옆 딱지 (없어도 됨)
 	Items = {
-		{ id = "StarterKit", kind = "Pass", idKey = "StarterKitPassId", price = 149, name = "스타터 키트", desc = "매 판 조명탄 총 + 조명탄 6발 + 손도끼를 들고 시작" },
-		{ id = "Tracker", kind = "Pass", idKey = "TrackerPassId", price = 199, name = "숲지기 추적기", desc = "[T] 10초 동안 괴물 위치가 보인다. 삑삑 소리는 괴물도 듣는다" },
-		{ id = "Disguise", kind = "Pass", idKey = "DisguisePassId", price = 249, name = "숲지기 변신", desc = "[G] 한 판에 한 번, 20초 동안 숲지기로 변해 괴물이 공격하지 않는다" },
-		{ id = "LightColor", kind = "Pass", idKey = "LightColorPassId", price = 49, name = "손전등 불빛 색", desc = "손전등 불빛 색을 바꾼다" },
-		{ id = "Revive", kind = "Product", idKey = "ReviveProductId", price = 25, name = "부활", desc = "죽거나 쓰러졌을 때 그 자리에서 일어난다 (한 판에 한 번)" },
-		{ id = "Flashbang", kind = "Product", idKey = "FlashbangPackProductId", price = 39, name = "섬광탄 3개", desc = "다음 판에 섬광탄 3개를 들고 시작 (한 판에 한 묶음)" },
-		{ id = "Cell", kind = "Product", idKey = "CellPackProductId", price = 19, name = "건전지 3개", desc = "다음 판에 건전지 3개를 들고 시작 (한 판에 한 묶음)" },
-		{ id = "Crate", kind = "Product", idKey = "SupplyCrateProductId", price = 79, name = "팀 보급 상자", desc = "다음 판에 같이 간 팀원 모두가 붕대와 건전지를 받는다" },
+		{ id = "StarterKit", kind = "Pass", idKey = "StarterKitPassId", price = 149, icon = "🔫", tint = Color3.fromRGB(200, 90, 30), tag = "추천", name = "스타터 키트", desc = "매 판 조명탄 총 + 조명탄 6발 + 손도끼를 들고 시작" },
+		{ id = "Tracker", kind = "Pass", idKey = "TrackerPassId", price = 199, icon = "📡", tint = Color3.fromRGB(190, 50, 50), name = "숲지기 추적기", desc = "[T] 10초 동안 괴물 위치가 보인다. 삑삑 소리는 괴물도 듣는다" },
+		{ id = "Disguise", kind = "Pass", idKey = "DisguisePassId", price = 249, icon = "🦌", tint = Color3.fromRGB(60, 130, 80), tag = "인기", name = "숲지기 변신", desc = "[G] 한 판에 한 번, 20초 동안 숲지기로 변해 괴물이 공격하지 않는다" },
+		{ id = "LightColor", kind = "Pass", idKey = "LightColorPassId", price = 49, icon = "🔦", tint = Color3.fromRGB(110, 90, 200), name = "손전등 불빛 색", desc = "손전등 불빛 색을 바꾼다" },
+		{ id = "Revive", kind = "Product", idKey = "ReviveProductId", price = 25, icon = "❤", tint = Color3.fromRGB(190, 60, 90), name = "부활", desc = "죽거나 쓰러졌을 때 그 자리에서 일어난다 (한 판에 한 번)" },
+		{ id = "Flashbang", kind = "Product", idKey = "FlashbangPackProductId", price = 39, icon = "💥", tint = Color3.fromRGB(200, 160, 40), name = "섬광탄 3개", desc = "다음 판에 섬광탄 3개를 들고 시작 (한 판에 한 묶음)" },
+		{ id = "Cell", kind = "Product", idKey = "CellPackProductId", price = 19, icon = "🔋", tint = Color3.fromRGB(70, 150, 70), name = "건전지 3개", desc = "다음 판에 건전지 3개를 들고 시작 (한 판에 한 묶음)" },
+		{ id = "Crate", kind = "Product", idKey = "SupplyCrateProductId", price = 79, icon = "📦", tint = Color3.fromRGB(150, 110, 60), tag = "팀", name = "팀 보급 상자", desc = "다음 판에 같이 간 팀원 모두가 붕대와 건전지를 받는다" },
 	},
 }
 

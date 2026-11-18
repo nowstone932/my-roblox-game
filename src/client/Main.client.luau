@@ -498,6 +498,7 @@ end, true, Enum.KeyCode.M, Enum.KeyCode.DPadDown)
 -- 설정 창 조작 시작/끝 (터치 기기는 창을 바로 누르면 되므로 화면 버튼을 만들지 않음)
 ContextActionService:BindAction("Settings", function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
+		Shop.close()
 		Settings.toggle()
 	end
 	return Enum.ContextActionResult.Sink
@@ -506,6 +507,7 @@ end, false, Enum.KeyCode.P)
 -- 대기실 상점 조작 시작/끝
 ContextActionService:BindAction("Shop", function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
+		Settings.close()
 		Shop.toggle()
 	end
 	return Enum.ContextActionResult.Pass

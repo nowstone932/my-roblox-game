@@ -2,7 +2,11 @@
 --
 --   [T] 숲지기 추적기: Config.Shop.TrackerTime 초 동안 괴물 위치를 알려 줌. 쓰고 나면 한동안 못 씀.
 --       켜져 있는 동안 삑삑 소리가 나서 가까이 있는 괴물이 소리 난 곳을 살피러 옵니다.
---   [G] 숲지기 변신: 한 판에 한 번, Config.Shop.DisguiseTime 초 동안 작은 숲지기 모습이 됨.
+--   [G] 숲지기 변신: 한 판에 한 번, Config.Shop.DisguiseTime 초 동안 숲지기 모습이 됨.
+--       ReplicatedStorage.Assets.Monster (직접 만든 숲지기 모델)가 있으면 그 모델 그대로 변신하고,
+--       걷기/달리기 애니메이션(Config.MonsterModel.Animations)도 똑같이 재생합니다.
+--       모델이 없을 때만 예전의 블록 분장(뿔, 해골)으로 대신해요.
+--       변신 중에는 화면이 3인칭으로 바뀝니다 (client/Abilities.luau).
 --       그동안 괴물은 나를 동족으로 착각해서 쫓지 않아요 (MonsterAI 가 Disguised 속성을 봄).
 --       대신 변신 중에는 도구(총, 도끼…)를 쓸 수 없습니다 (Combat).
 --
@@ -14,6 +18,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Assets = require(ReplicatedStorage.Shared.Assets)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Monetization = require(script.Parent.Monetization)
@@ -30,6 +35,8 @@ local disguiseTokens: { [Player]: number } = {}
 -- 변신하면서 바꿔 둔 것들 (끝나면 되돌림)
 type Saved = { inst: Instance, prop: string, value: any }
 local savedLooks: { [Player]: { Saved } } = {}
+-- 변신한 사람 몸에 붙여 둔 숲지기 모델 (Workspace.Disguises 안)
+local meshModels: { [Player]: Model } = {}
 
 local function now(): number
 	return Workspace:GetServerTimeNow()
@@ -191,15 +198,183 @@ local function restoreLook(player: Player)
 	if costume then
 		costume:Destroy()
 	end
+	local mesh = meshModels[player]
+	meshModels[player] = nil
+	if mesh then
+		mesh:Destroy()
+	end
 end
 
-local function applyLook(player: Player, char: Model)
+---------------------------------------------------------------------------
+-- 진짜 숲지기 모델로 변신
+---------------------------------------------------------------------------
+local function worldBounds(m: Model): (Vector3, Vector3)
+	local low = Vector3.new(math.huge, math.huge, math.huge)
+	local high = -low
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			local cf, half = d.CFrame, d.Size / 2
+			local r, u, l = cf.RightVector, cf.UpVector, cf.LookVector
+			local extent = Vector3.new(
+				math.abs(r.X) * half.X + math.abs(u.X) * half.Y + math.abs(l.X) * half.Z,
+				math.abs(r.Y) * half.X + math.abs(u.Y) * half.Y + math.abs(l.Y) * half.Z,
+				math.abs(r.Z) * half.X + math.abs(u.Z) * half.Y + math.abs(l.Z) * half.Z
+			)
+			low = low:Min(cf.Position - extent)
+			high = high:Max(cf.Position + extent)
+		end
+	end
+	return low, high
+end
+
+local function disguiseFolder(): Instance
+	local folder = Workspace:FindFirstChild("Disguises")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Disguises"
+		folder.Parent = Workspace
+	end
+	return folder
+end
+
+-- 숲지기 모델을 복제해 캐릭터 몸통(HumanoidRootPart)에 붙임. 모델이 없으면 nil
+local function buildMesh(player: Player, hum: Humanoid, hrp: BasePart): Model?
+	local m = Assets.clone("Monster", "Monster")
+	if not m then
+		return nil
+	end
+	local parts: { BasePart } = {}
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			table.insert(parts, d)
+		elseif d:IsA("Humanoid") then
+			d:Destroy() -- 캐릭터가 둘이 되지 않게. 애니메이션은 AnimationController 로 재생
+		end
+	end
+	if #parts == 0 then
+		m:Destroy()
+		return nil
+	end
+
+	-- 키 맞추기
+	local low, high = worldBounds(m)
+	local height = high.Y - low.Y
+	if height > 0.01 then
+		m:ScaleTo(m:GetScale() * (S.DisguiseHeight / height))
+		low, high = worldBounds(m)
+	end
+
+	-- 모델의 발바닥 가운데가 캐릭터 발밑에 오도록 붙임
+	local feet = CFrame.new((low.X + high.X) / 2, low.Y, (low.Z + high.Z) / 2)
+	local legLength = if hum.RigType == Enum.HumanoidRigType.R15 then hrp.Size.Y / 2 + hum.HipHeight else 3
+	local base = CFrame.new(0, -legLength, 0) * CFrame.Angles(0, math.rad(Config.MonsterModel.FaceYaw), 0)
+	local jointed: { [BasePart]: boolean } = {}
+	for _, d in m:GetDescendants() do
+		if d:IsA("JointInstance") and d.Part1 then
+			jointed[d.Part1] = true
+		end
+	end
+	for _, part in parts do
+		part.Anchored = false
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Massless = true
+		if not jointed[part] then
+			local weld = Instance.new("Weld")
+			weld.Name = "DisguiseWeld"
+			weld.Part0 = hrp
+			weld.Part1 = part
+			weld.C0 = base * feet:ToObjectSpace(part.CFrame)
+			weld.Parent = part
+		end
+	end
+
+	local controller = m:FindFirstChildOfClass("AnimationController")
+	if not controller then
+		controller = Instance.new("AnimationController")
+		controller.Parent = m
+	end
+	local animator = controller:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = controller
+	end
+
+	m.Name = tostring(player.UserId)
+	m.Parent = disguiseFolder()
+	return m
+end
+
+-- 움직이는 빠르기에 맞춰 서 있기 / 걷기 / 달리기 애니메이션을 바꿔 틂 (서버에서 틀면 모두에게 보임)
+local function animateMesh(player: Player, m: Model, hrp: BasePart, token: number)
+	local controller = m:FindFirstChildOfClass("AnimationController")
+	local animator = controller and controller:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+	local tracks: { [string]: AnimationTrack } = {}
+	for _, name in { "Idle", "Walk", "Run" } do
+		local id = Config.MonsterModel.Animations[name]
+		if typeof(id) == "number" and id ~= 0 then
+			local anim = Instance.new("Animation")
+			anim.AnimationId = "rbxassetid://" .. id
+			local ok, track = pcall(function()
+				return (animator :: Animator):LoadAnimation(anim)
+			end)
+			if ok and track then
+				track.Looped = true
+				track.Priority = Enum.AnimationPriority.Movement
+				tracks[name] = track
+			end
+		end
+	end
+	local current: string? = nil
+	while disguiseTokens[player] == token and m.Parent and hrp.Parent do
+		local v = hrp.AssemblyLinearVelocity
+		local speed = Vector3.new(v.X, 0, v.Z).Magnitude
+		local want = if speed > (Config.Player.WalkSpeed + Config.Player.SprintSpeed) / 2 then "Run" elseif speed > 1 then "Walk" else "Idle"
+		if not tracks[want] then
+			want = if tracks.Walk and want == "Run" then "Walk" else "Idle"
+		end
+		if want ~= current then
+			if current and tracks[current] then
+				tracks[current]:Stop(0.25)
+			end
+			current = want
+			if tracks[want] then
+				tracks[want]:Play(0.25)
+			end
+		end
+		task.wait(0.15)
+	end
+end
+
+local function applyLook(player: Player, char: Model, hum: Humanoid, hrp: BasePart, token: number)
 	local saved: { Saved } = {}
 	savedLooks[player] = saved
 	local function set(inst: Instance, prop: string, value: any)
 		table.insert(saved, { inst = inst, prop = prop, value = (inst :: any)[prop] });
 		(inst :: any)[prop] = value
 	end
+
+	local mesh = buildMesh(player, hum, hrp)
+	if mesh then
+		-- 진짜 숲지기 모델: 내 캐릭터는 통째로 안 보이게 하고 이름표도 숨김
+		meshModels[player] = mesh
+		for _, d in char:GetDescendants() do
+			if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" then
+				set(d, "Transparency", 1)
+			elseif d:IsA("Decal") then
+				set(d, "Transparency", 1)
+			end
+		end
+		set(hum, "DisplayDistanceType", Enum.HumanoidDisplayDistanceType.None)
+		task.spawn(animateMesh, player, mesh, hrp, token)
+		return
+	end
+
+	-- 모델이 없을 때: 블록 분장
 	for _, d in char:GetDescendants() do
 		if d:IsA("Shirt") or d:IsA("Pants") or d:IsA("ShirtGraphic") then
 			set(d, "Parent", nil) -- 옷을 잠깐 벗김 (끝나면 다시 입힘)
@@ -250,7 +425,7 @@ local function useDisguise(player: Player)
 	player:SetAttribute("DisguiseEnds", now() + S.DisguiseTime)
 	player:SetAttribute("Disguised", true)
 	hum:UnequipTools()
-	applyLook(player, char)
+	applyLook(player, char, hum, hrp, token)
 	Sfx.all("MonsterGrowl", hrp.Position)
 
 	hum.Died:Once(function()
@@ -304,6 +479,11 @@ function Abilities.init()
 		trackerTokens[player] = nil
 		disguiseTokens[player] = nil
 		savedLooks[player] = nil
+		local mesh = meshModels[player]
+		meshModels[player] = nil
+		if mesh then
+			mesh:Destroy()
+		end
 	end)
 end
 

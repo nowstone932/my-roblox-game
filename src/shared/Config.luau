@@ -279,10 +279,15 @@ Config.Shop = {
 	},
 }
 
--- 순위표(오른쪽 위 플레이어 목록) 칸 이름. 로블록스가 모두에게 같은 이름을 보여줘서 언어별로 못 바꾸니 두 말을 같이 씀
+-- 순위표(오른쪽 위 플레이어 목록) 칸 이름. 서버에는 영어 이름으로 만들고,
+-- 각 플레이어 화면에서 client/WorldText.luau 가 고른 언어로 바꿔 보여줌 (번역은 아래 한국어 → LangEn)
 Config.Stats = {
-	Escapes = "탈출 Escapes",
-	Tags = "인식표 Tags",
+	Escapes = "Escapes",
+	Tags = "Dog Tags",
+}
+Config.StatLabels = {
+	Escapes = "탈출",
+	["Dog Tags"] = "모은 인식표",
 }
 
 return Config

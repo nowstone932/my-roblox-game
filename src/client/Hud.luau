@@ -731,7 +731,9 @@ function Hud.whisper(text: string)
 end
 
 -- 쪽지를 펼침. 펼쳤으면 true
+local openNoteId: string? = nil -- 지금 펼친 쪽지 (언어를 바꾸면 다시 그림)
 function Hud.showNote(noteId: string): boolean
+	openNoteId = noteId
 	local loggerIndex = tonumber(noteId:match("^Logger(%d+)$"))
 	if loggerIndex then
 		local logger = Story.Loggers[loggerIndex]
@@ -854,6 +856,10 @@ end
 
 -- 언어가 바뀌었을 때: 써 둔 글씨를 전부 새 언어로 다시 씀
 function Hud.applyLanguage()
+	-- 펼쳐 둔 쪽지도 새 언어로 다시 씀
+	if openNoteId and notePanel.Visible then
+		Hud.showNote(openNoteId)
+	end
 	for inst, text in staticTexts do
 		(inst :: any).Text = T(text)
 	end

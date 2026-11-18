@@ -13,6 +13,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Config = require(ReplicatedStorage.Shared.Config)
 local Items = require(ReplicatedStorage.Shared.Items)
 local Lang = require(ReplicatedStorage.Shared.Lang)
 
@@ -73,7 +74,37 @@ local function trackTool(tool: Tool)
 	end)
 end
 
+-- 순위표 칸 이름 (서버 이름은 영어. 내 화면에서만 고른 언어로)
+local stats: { [ValueBase]: string } = setmetatable({}, { __mode = "k" }) :: any -- 값 → 서버가 붙인 이름
+
+local function applyStat(value: ValueBase)
+	local label = Config.StatLabels[stats[value]]
+	local shown = if label then Lang.t(label) else stats[value]
+	if value.Name ~= shown then
+		value.Name = shown
+	end
+end
+
+local function trackStat(value: Instance)
+	if not value:IsA("ValueBase") or stats[value] then
+		return
+	end
+	local folder = value.Parent
+	if not (folder and folder.Name == "leaderstats" and folder.Parent and folder.Parent:IsA("Player")) then
+		return
+	end
+	if not Config.StatLabels[value.Name] then
+		return
+	end
+	stats[value] = value.Name
+	applyStat(value)
+end
+
 local function track(label: Instance)
+	if label:IsA("ValueBase") then
+		trackStat(label)
+		return
+	end
 	if label:IsA("Tool") then
 		trackTool(label)
 		return
@@ -102,18 +133,26 @@ function WorldText.start()
 		track(child)
 	end
 	Workspace.DescendantAdded:Connect(track)
-	-- 가방(Backpack) 안의 도구
-	local player = Players.LocalPlayer
-	for _, child in player:GetDescendants() do
-		track(child)
+	-- 가방(Backpack) 안의 도구, 모든 플레이어의 순위표 값
+	local function watchPlayer(player: Player)
+		for _, child in player:GetDescendants() do
+			track(child)
+		end
+		player.DescendantAdded:Connect(track)
 	end
-	player.DescendantAdded:Connect(track)
+	for _, player in Players:GetPlayers() do
+		watchPlayer(player)
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
 	Lang.onChanged(function()
 		for label, entry in entries do
 			apply(label, entry)
 		end
 		for tool in tools do
 			applyTool(tool)
+		end
+		for value in stats do
+			applyStat(value)
 		end
 	end)
 end

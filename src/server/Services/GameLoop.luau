@@ -67,7 +67,7 @@ local function setupLeaderstats(player: Player)
 	local stats = Instance.new("Folder")
 	stats.Name = "leaderstats"
 	local escapes = Instance.new("IntValue")
-	escapes.Name = Config.Stats.Escapes -- 순위표 칸 이름 (언어별로 못 바꿔서 한국어+영어)
+	escapes.Name = Config.Stats.Escapes -- 순위표 칸 이름 (영어. 각자 화면에서 WorldText 가 번역)
 	escapes.Parent = stats
 	-- TODO: DataStore로 저장하면 다시 접속해도 기록이 남아요
 	stats.Parent = player

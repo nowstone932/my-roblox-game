@@ -250,6 +250,8 @@ return {
 	["FUEL"] = "COMBUSTÍVEL",
 	["TRUCK"] = "CAMINHÃO",
 	["BLACKPINE"] = "BLACKPINE",
+	["Escapes"] = "Fugas",
+	["Dog tags"] = "Plaquetas",
 	["Scrap"] = "Sucata",
 	["Rusty scrap metal"] = "Sucata enferrujada",
 	["Wood"] = "Madeira",

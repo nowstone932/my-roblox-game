@@ -16,6 +16,7 @@
 -- Studio에서 직접 꾸미고 싶으면 Workspace.BlackpineForest 안을 수정해도 되지만,
 -- 게임을 시작할 때마다 다시 만들어지므로 이 파일을 고쳐야 영구적으로 바뀝니다.
 
+local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -343,7 +344,8 @@ function MapBuilder.build(): MapInfo
 	Build.part(camp, Vector3.new(9.6, 0.5, 1.8), boardCf * CFrame.new(0, 8.2, 0) * CFrame.Angles(math.rad(8), 0, 0), C.Roof, Enum.Material.Wood, { CanCollide = false })
 	Build.part(camp, Vector3.new(8, 5.2, 0.3), boardCf * CFrame.new(0, 5, 0), C.Plank, Enum.Material.WoodPlanks)
 	local mapBoard = Build.part(camp, Vector3.new(6.4, 4.2, 0.1), boardCf * CFrame.new(0, 5, -0.2), Color3.fromRGB(214, 200, 164), Enum.Material.Fabric, { Name = "MapBoard", CanCollide = false })
-	Build.text(mapBoard, Enum.NormalId.Front, "흑송 벌목장\n안내도", Color3.fromRGB(70, 40, 28))
+	-- 판자 앞면의 지도 그림은 각 플레이어 화면에서 그림 (client/MapUi.luau, 언어 설정에 맞춰서)
+	CollectionService:AddTag(mapBoard, "MapBoard")
 	local boardLamp = Build.part(camp, Vector3.new(0.5, 0.7, 0.5), boardCf * CFrame.new(0, 7.5, -0.8), Color3.fromRGB(255, 170, 80), Enum.Material.Neon, { CanCollide = false, CanQuery = false })
 	Build.light(boardLamp, Color3.fromRGB(255, 160, 80), 14, 1, true)
 

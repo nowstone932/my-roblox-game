@@ -16,6 +16,8 @@ local NAMES = {
 	"UseCell", -- 클라 -> 서버: 건전지 하나 갈아 끼우기
 	"LobbyStart", -- 클라 -> 서버: 대기실에서 "지금 출발" 버튼을 누름
 	"SaveSettings", -- 클라 -> 서버: 설정 저장 (언어, 효과음 %, 배경음 %)
+	"ShopSet", -- 클라 -> 서버: 상점에서 고른 것 저장 ("LightColor", 색 이름)
+	"UseAbility", -- 클라 -> 서버: 게임패스 능력 쓰기 ("Tracker" | "Disguise")
 }
 
 local folder: Instance

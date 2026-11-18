@@ -217,6 +217,9 @@ local function onUseTool(player: Player, itemId: any, origin: any, look: any)
 	if not (char and hum and head) then
 		return
 	end
+	if player:GetAttribute("Disguised") == true then
+		return -- 숲지기로 변신한 동안에는 도구를 못 씀
+	end
 	if not Tools.isHolding(player, itemId) or Inventory.get(player, itemId) < 1 then
 		return
 	end

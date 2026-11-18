@@ -6,9 +6,11 @@
 --   Scares      공포 연출 (발소리, 형체…)      MonsterAnimator 괴물 움직임
 --   Audio       소리와 배경음악             Hud         화면 글씨/창
 --   Settings    설정 창 (언어, 소리 크기)      MapUi       지도
+--   Shop        로벅스 상점 (대기실 왼쪽)      Abilities   게임패스 능력 (추적기, 변신)
 --
 -- 조작: [F] 손전등  [R] 건전지 교체  [Shift] 달리기  [Ctrl] 웅크리기  [C] 제작  [Q] 목표 보기
---       [M] 지도  [P] 설정  [E] 쪽지 닫기  [Enter] 대기실에서 지금 출발
+--       [M] 지도  [P] 설정  [E] 쪽지 닫기  [Enter] 대기실에서 지금 출발  [B] 대기실 상점
+--       게임패스가 있으면: [T] 숲지기 추적기  [G] 숲지기 변신
 
 local ContextActionService = game:GetService("ContextActionService")
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -31,6 +33,8 @@ local MapUi = require(script.Parent.MapUi)
 local MonsterAnimator = require(script.Parent.MonsterAnimator)
 local Scares = require(script.Parent.Scares)
 local Settings = require(script.Parent.Settings)
+local Shop = require(script.Parent.Shop)
+local Abilities = require(script.Parent.Abilities)
 local Spectate = require(script.Parent.Spectate)
 local Weather = require(script.Parent.Weather)
 
@@ -82,9 +86,11 @@ Hud.init({
 Audio.init()
 Settings.init() -- Audio 다음에 (소리 크기를 적용해야 하므로)
 MapUi.init()
+Shop.init()
+Abilities.start({ notify = Hud.notify, flash = Hud.flash })
 -- 마우스로 눌러야 하는 창이 떠 있을 때만 커서를 보여줌. 그 밖에는 1인칭이라 숨김
 Immersion.wantCursor = function()
-	return Settings.isActive() or Hud.wantsCursor() or Spectate.isActive()
+	return Settings.isActive() or Shop.isActive() or Hud.wantsCursor() or Spectate.isActive()
 end
 Immersion.start()
 Weather.start()
@@ -400,7 +406,7 @@ local function onCharacter(character: Model)
 		if child:IsA("Tool") and not child:GetAttribute("Hooked") then
 			child:SetAttribute("Hooked", true)
 			child.Activated:Connect(function()
-				if Hud.isCraftOpen() then
+				if Hud.isCraftOpen() or player:GetAttribute("Disguised") == true then
 					return
 				end
 				local itemId = child:GetAttribute("ItemId")
@@ -478,6 +484,14 @@ ContextActionService:BindAction("Settings", function(_, inputState)
 	end
 	return Enum.ContextActionResult.Sink
 end, false, Enum.KeyCode.P)
+
+-- 대기실 상점 조작 시작/끝
+ContextActionService:BindAction("Shop", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		Shop.toggle()
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.B)
 
 -- 대기실: "지금 출발" (버튼이 떠 있을 때만)
 ContextActionService:BindAction("LobbyStart", function(_, inputState)

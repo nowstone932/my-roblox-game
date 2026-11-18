@@ -49,6 +49,7 @@ src/
       Objectives.luau       정문 / 트럭 / 무전 / 봉인 탈출 장치
       GameLoop.luau         라운드 진행, 탈출 처리, 엔딩
       Monetization.luau     게임패스 / 개발자 상품
+      Abilities.luau        게임패스 능력 (추적기, 변신)
       Inventory.luau        인벤토리 (플레이어 Attribute)
       Sfx.luau              서버에서 효과음 요청
   client/                   → StarterPlayerScripts.Client
@@ -62,6 +63,8 @@ src/
     MonsterAnimator.luau    괴물 관절 움직임 (걷기, 굳기, 울부짖기, 눈 번쩍임)
     Audio.luau              소리 재생, 긴장/추격 BGM 연출, 괴물 3D 소리
     Spectate.luau           죽거나 탈출하면 살아있는 동료 관전
+    Shop.luau               로벅스 상점 창 (대기실 왼쪽, B 키) — docs/상점_설정.md
+    Abilities.luau          게임패스 능력 화면 (T 추적기, G 변신)
 ```
 
 ## 다음에 해볼 만한 것

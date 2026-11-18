@@ -15,6 +15,7 @@ local Hiding = require(Services.Hiding)
 local Combat = require(Services.Combat)
 local Light = require(Services.Light)
 local Monetization = require(Services.Monetization)
+local Abilities = require(Services.Abilities)
 local GameLoop = require(Services.GameLoop)
 local Settings = require(Services.Settings)
 local Lobby = require(Services.Lobby)
@@ -35,6 +36,7 @@ Settings.init()
 Monetization.init({
 	onRevive = GameLoop.revive,
 })
+Abilities.init()
 GameLoop.init(map, {
 	matchServer = isMatchServer,
 	lobbySpawn = if lobbyInfo then lobbyInfo.spawn else nil,

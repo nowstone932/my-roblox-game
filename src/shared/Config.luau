@@ -215,12 +215,65 @@ Config.Flashlight = {
 
 -- 소리와 배경음악(BGM) ID는 src/shared/SoundList.luau 에서 바꿔요. (설명: docs/소리_넣기.md)
 
--- 수익화: Creator Hub에서 게임패스/개발자 상품을 만든 뒤 숫자 ID를 넣으세요. 0이면 꺼짐.
+-- 수익화(로벅스 상점)
+-- Creator Hub(create.roblox.com)에서 게임패스/개발자 상품을 만든 뒤 숫자 ID를 넣으세요. 0이면 "준비 중"으로 보여요.
+-- 만드는 방법: docs/상점_설정.md
 Config.Monetization = {
-	StarterKitPassId = 0, -- 게임패스: 라운드 시작 시 조명탄 총 + 조명탄 6발 + 손도끼
-	ReviveProductId = 0, -- 개발자 상품: 죽었을 때 그 자리에서 부활
-	FlashbangPackProductId = 0, -- 개발자 상품: 섬광탄 3개
+	-- 게임패스 (한 번 사면 계속)
+	StarterKitPassId = 0, -- 스타터 키트: 매 판 조명탄 총 + 조명탄 6발 + 손도끼
+	TrackerPassId = 0, -- 숲지기 추적기: [T] 10초 동안 괴물 위치 표시
+	DisguisePassId = 0, -- 숲지기 변신: [G] 한 판에 한 번, 20초 동안 괴물이 공격하지 않음
+	LightColorPassId = 0, -- 손전등 불빛 색 바꾸기
+
+	-- 개발자 상품 (살 때마다 1개)
+	ReviveProductId = 0, -- 부활: 죽거나 쓰러진 자리에서 일어남
+	FlashbangPackProductId = 0, -- 섬광탄 3개
+	CellPackProductId = 0, -- 건전지 3개
+	SupplyCrateProductId = 0, -- 팀 보급 상자: 같이 간 팀원 모두에게 붕대 + 건전지
+
 	StarterKitAmmo = 6,
+
+	-- true 면 Studio에서 테스트할 때 게임패스를 전부 가진 것으로 쳐요 (실제 게임에는 영향 없음).
+	-- 게임패스를 만들기 전에 추적기/변신을 미리 써 볼 수 있습니다.
+	StudioOwnsAllPasses = true,
+}
+
+-- 상점 물건의 세부 숫자
+Config.Shop = {
+	RevivesPerRound = 1, -- 한 판에 로벅스 부활은 한 사람당 이만큼만
+	FlashbangPack = 3, -- 섬광탄 묶음 하나에 든 개수
+	CellPack = 3, -- 건전지 묶음 하나에 든 개수
+	CrateMedkit = 1, -- 보급 상자: 팀원 한 명이 받는 붕대
+	CrateCell = 2, -- 보급 상자: 팀원 한 명이 받는 건전지
+
+	TrackerTime = 10, -- 추적기를 켜면 괴물이 보이는 시간(초)
+	TrackerCooldown = 60, -- 다시 쓸 수 있을 때까지(초)
+	TrackerNoise = 55, -- 추적기 삑삑 소리가 괴물에게 들리는 거리(스터드)
+
+	DisguiseTime = 20, -- 변신이 유지되는 시간(초)
+	DisguisePerRound = 1, -- 한 판에 변신할 수 있는 횟수
+
+	-- 손전등 불빛 색 (상점에서 누를 때마다 다음 색으로)
+	LightColors = {
+		{ id = "Default", name = "기본", color = Color3.fromRGB(255, 238, 205) },
+		{ id = "Blue", name = "파랑", color = Color3.fromRGB(120, 170, 255) },
+		{ id = "Green", name = "초록", color = Color3.fromRGB(130, 255, 150) },
+		{ id = "Purple", name = "보라", color = Color3.fromRGB(190, 130, 255) },
+		{ id = "Red", name = "빨강", color = Color3.fromRGB(255, 110, 100) },
+	},
+
+	-- 상점에 보이는 순서. price 는 가격을 못 불러왔을 때만 보이는 숫자예요 (진짜 가격은 Creator Hub에서 정함)
+	--   kind "Pass" = 게임패스, "Product" = 개발자 상품 / idKey = 위 Config.Monetization 의 이름
+	Items = {
+		{ id = "StarterKit", kind = "Pass", idKey = "StarterKitPassId", price = 149, name = "스타터 키트", desc = "매 판 조명탄 총 + 조명탄 6발 + 손도끼를 들고 시작" },
+		{ id = "Tracker", kind = "Pass", idKey = "TrackerPassId", price = 199, name = "숲지기 추적기", desc = "[T] 10초 동안 괴물 위치가 보인다. 삑삑 소리는 괴물도 듣는다" },
+		{ id = "Disguise", kind = "Pass", idKey = "DisguisePassId", price = 249, name = "숲지기 변신", desc = "[G] 한 판에 한 번, 20초 동안 숲지기로 변해 괴물이 공격하지 않는다" },
+		{ id = "LightColor", kind = "Pass", idKey = "LightColorPassId", price = 49, name = "손전등 불빛 색", desc = "손전등 불빛 색을 바꾼다" },
+		{ id = "Revive", kind = "Product", idKey = "ReviveProductId", price = 25, name = "부활", desc = "죽거나 쓰러졌을 때 그 자리에서 일어난다 (한 판에 한 번)" },
+		{ id = "Flashbang", kind = "Product", idKey = "FlashbangPackProductId", price = 39, name = "섬광탄 3개", desc = "다음 판에 섬광탄 3개를 들고 시작 (한 판에 한 묶음)" },
+		{ id = "Cell", kind = "Product", idKey = "CellPackProductId", price = 19, name = "건전지 3개", desc = "다음 판에 건전지 3개를 들고 시작 (한 판에 한 묶음)" },
+		{ id = "Crate", kind = "Product", idKey = "SupplyCrateProductId", price = 79, name = "팀 보급 상자", desc = "다음 판에 같이 간 팀원 모두가 붕대와 건전지를 받는다" },
+	},
 }
 
 return Config

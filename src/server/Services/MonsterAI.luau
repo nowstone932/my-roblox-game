@@ -351,6 +351,10 @@ local function aliveCharacter(player: Player): (Model?, BasePart?)
 	if player:GetAttribute("Downed") == true then
 		return nil, nil
 	end
+	-- 숲지기로 변신 중(상점 아이템)이면 동족으로 착각해서 못 본 척함 (Services/Abilities)
+	if player:GetAttribute("Disguised") == true then
+		return nil, nil
+	end
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")

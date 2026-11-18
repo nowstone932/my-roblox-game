@@ -36,6 +36,27 @@ local warnedEmpty = false
 local setLight = Remotes.get("SetLight")
 local useCell = Remotes.get("UseCell")
 
+local BEAM_COLOR = Color3.fromRGB(255, 238, 205)
+local SPILL_COLOR = Color3.fromRGB(255, 230, 190)
+
+-- 상점의 "손전등 불빛 색" 게임패스: 고른 색으로 빛을 물들임
+local function applyColor()
+	if not beam then
+		return
+	end
+	local tint: Color3? = nil
+	if player:GetAttribute("Pass_LightColor") == true then
+		local id = player:GetAttribute("LightColor")
+		for _, info in Config.Shop.LightColors do
+			if info.id == id and id ~= "Default" then
+				tint = info.color
+			end
+		end
+	end
+	beam.Color = tint or BEAM_COLOR
+	spill.Color = tint or SPILL_COLOR
+end
+
 local function hidden(): boolean
 	return player:GetAttribute("Hiding") == true
 end
@@ -127,6 +148,10 @@ function Flashlight.start(options: Options?)
 	nightSight.Parent = part
 
 	aim = camera.CFrame
+
+	applyColor()
+	player:GetAttributeChangedSignal("LightColor"):Connect(applyColor)
+	player:GetAttributeChangedSignal("Pass_LightColor"):Connect(applyColor)
 
 	-- 서버가 건전지를 갈아 끼워 줬을 때
 	player:GetAttributeChangedSignal("CellCharge"):Connect(function()

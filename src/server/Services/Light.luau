@@ -38,9 +38,23 @@ local function teamLight(player: Player): SpotLight?
 	return light :: SpotLight
 end
 
+-- 상점의 "손전등 불빛 색" 게임패스를 가진 사람이 고른 색
+local function lightColor(player: Player): Color3
+	if player:GetAttribute("Pass_LightColor") == true then
+		local id = player:GetAttribute("LightColor")
+		for _, info in Config.Shop.LightColors do
+			if info.id == id then
+				return info.color
+			end
+		end
+	end
+	return Color3.fromRGB(255, 240, 210)
+end
+
 local function apply(player: Player)
 	local light = teamLight(player)
 	if light then
+		light.Color = lightColor(player)
 		light.Enabled = player:GetAttribute("LightOn") ~= false and player:GetAttribute("InRound") == true
 	end
 end
@@ -51,9 +65,11 @@ local function onPlayer(player: Player)
 		character:WaitForChild("Head", 5)
 		apply(player)
 	end)
-	player:GetAttributeChangedSignal("InRound"):Connect(function()
-		apply(player)
-	end)
+	for _, name in { "InRound", "LightColor", "Pass_LightColor" } do
+		player:GetAttributeChangedSignal(name):Connect(function()
+			apply(player)
+		end)
+	end
 	if player.Character then
 		apply(player)
 	end

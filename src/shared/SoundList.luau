@@ -81,6 +81,7 @@ SoundList.Sounds = {
 	Flashbang = { id = 9114363548, volume = 1.2, range = 200 }, -- 섬광탄 폭발
 	TrapSet = { id = 9120094799, volume = 0.8, range = 40 }, -- 곰덫 설치 (철컥)
 	TrapSnap = { id = 9116669896, volume = 1.2, range = 150 }, -- 곰덫이 괴물을 물었을 때 (쾅!)
+	TrackerBeep = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.6, pitch = 1.7, range = 55 }, -- 숲지기 추적기 삑삑 소리 (상점 아이템)
 	Heal = { id = 9125986205, volume = 0.7 }, -- 구급상자/부활
 	PlayerHurt = { id = 9113511616, volume = 1 }, -- 괴물에게 맞음
 	Downed = { id = 9113511616, volume = 0.9, pitch = 0.6 }, -- 쓰러짐

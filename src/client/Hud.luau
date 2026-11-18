@@ -55,6 +55,7 @@ local batteryBack: Frame
 local batteryBar: Frame
 local batteryLabel: TextLabel
 local startButton: TextButton
+local reviveButtons: { TextButton } = {}
 
 -- 한 번 써 두면 안 바뀌는 글씨들. 언어를 바꾸면 여기 적힌 한국어 원문으로 다시 번역함
 local staticTexts: { [Instance]: string } = {}
@@ -173,7 +174,7 @@ function Hud.init(callbacks: Callbacks)
 			TextTransparency = 0.35,
 			Parent = gui,
 		}),
-		"[E] 줍기/사용   [C] 제작   [1~9] 도구 들기   [클릭] 도구 사용   [M] 지도\n[F] 손전등   [R] 건전지 교체   [Shift] 달리기   [Ctrl] 웅크리기   [Q] 목표   [P] 설정"
+		"[E] 줍기/사용   [C] 제작   [1~9] 도구 들기   [클릭] 도구 사용   [M] 지도\n[F] 손전등   [R] 건전지 교체   [Shift] 달리기   [Ctrl] 웅크리기   [Q] 목표   [P] 설정   [B] 상점(대기실)"
 	)
 
 	-- 대기실: 카운트다운이 어느 정도 지나면 나타나는 "지금 출발" 버튼 (키보드는 Enter)
@@ -304,6 +305,7 @@ function Hud.init(callbacks: Callbacks)
 	tr(label({ Position = UDim2.fromOffset(0, 50), Size = UDim2.new(1, 0, 0, 24), Parent = deadPanel }), "살아있는 동료를 관전합니다 — 모두 끝나면 라운드 종료")
 	if M.ReviveProductId ~= 0 then
 		local revive = tr(button({ Position = UDim2.fromOffset(110, 90), Size = UDim2.fromOffset(200, 40), BackgroundColor3 = Color3.fromRGB(0, 110, 60), Modal = true, Parent = deadPanel }), "지금 부활하기 (로벅스)")
+		table.insert(reviveButtons, revive)
 		revive.Activated:Connect(function()
 			callbacks.buyProduct(M.ReviveProductId)
 		end)
@@ -315,6 +317,7 @@ function Hud.init(callbacks: Callbacks)
 	downedText = label({ Position = UDim2.fromOffset(0, 48), Size = UDim2.new(1, 0, 0, 26), Text = "", Parent = downedPanel })
 	if M.ReviveProductId ~= 0 then
 		local selfRevive = tr(button({ Position = UDim2.fromOffset(130, 90), Size = UDim2.fromOffset(200, 40), BackgroundColor3 = Color3.fromRGB(0, 110, 60), Modal = true, Parent = downedPanel }), "스스로 일어나기 (로벅스)")
+		table.insert(reviveButtons, selfRevive)
 		selfRevive.Activated:Connect(function()
 			callbacks.buyProduct(M.ReviveProductId)
 		end)
@@ -590,6 +593,12 @@ function Hud.refresh()
 	refreshBag()
 	refreshCraft()
 
+	-- 로벅스 부활은 한 판에 정해진 횟수만 (다 쓰면 버튼을 숨김)
+	local canRevive = (player:GetAttribute("RevivesUsed") or 0) < Config.Shop.RevivesPerRound
+	for _, b in reviveButtons do
+		b.Visible = canRevive
+	end
+
 	local downed = player:GetAttribute("Downed") == true
 	downedPanel.Visible = downed
 	if downed then
@@ -663,7 +672,10 @@ function Hud.wantsCursor(): boolean
 	if craftPanel.Visible then
 		return true
 	end
-	return Config.Monetization.ReviveProductId ~= 0 and (deadPanel.Visible or downedPanel.Visible)
+	if Config.Monetization.ReviveProductId == 0 or (player:GetAttribute("RevivesUsed") or 0) >= Config.Shop.RevivesPerRound then
+		return false
+	end
+	return deadPanel.Visible or downedPanel.Visible
 end
 
 function Hud.setCraftOpen(open: boolean)

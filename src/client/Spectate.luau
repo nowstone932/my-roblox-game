@@ -7,6 +7,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Lang = require(game:GetService("ReplicatedStorage").Shared.Lang)
@@ -166,7 +167,9 @@ local function update()
 	end
 	subjectRoot = root
 	camera.CameraType = Enum.CameraType.Scriptable
-	nameLabel.Text = Lang.t("관전 중: %s   [Q] / [E] 바꾸기"):format((subject :: Player).DisplayName)
+	-- 핸드폰은 키보드가 없으니 ◀ ▶ 버튼만 안내
+	local hint = if UserInputService.KeyboardEnabled then "관전 중: %s   [Q] / [E] 바꾸기" else "관전 중: %s"
+	nameLabel.Text = Lang.t(hint):format((subject :: Player).DisplayName)
 
 	-- 동료의 어깨 뒤에서 동료가 보는 방향을 같이 봄
 	local char = (subject :: Player).Character

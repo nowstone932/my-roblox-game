@@ -2,7 +2,7 @@
 --
 --   대기실에서는 항상 왼쪽에 보여요. [B]를 누르면 "조작 중"이 되어 마우스 커서가 나타나고
 --   구매 버튼을 누를 수 있어요. 다시 [B](또는 닫기 버튼)를 누르면 커서가 사라집니다.
---   화면을 터치하는 기기에서는 [B] 없이 바로 누를 수 있어요.
+--   핸드폰/태블릿에서는 오른쪽 위 "상점" 버튼으로 열고 닫아요.
 --   숲에서는 상점이 보이지 않습니다 (부활 버튼만 죽었을 때 따로 나옴).
 --
 -- 물건 목록과 설명: Config.Shop.Items / 물건 ID: Config.Monetization
@@ -112,7 +112,8 @@ local function redraw()
 	if not lobby then
 		active = false
 	end
-	panel.Visible = lobby
+	-- 핸드폰은 화면이 좁고 왼쪽 아래 이동 조이스틱을 가리므로 "상점" 버튼을 눌렀을 때만 보여줌
+	panel.Visible = lobby and (UserInputService.KeyboardEnabled or not UserInputService.TouchEnabled or active)
 	panel.BackgroundTransparency = if active then 0.12 else 0.45
 	titleLabel.Text = T("상점")
 	if not UserInputService.KeyboardEnabled then

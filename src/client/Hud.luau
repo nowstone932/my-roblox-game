@@ -134,6 +134,23 @@ local function craftText(recipe: any): string
 	return ("  %s  —  %s\n  %s"):format(T(recipe.name), costText(recipe.cost), T(recipe.desc))
 end
 
+-- 키보드 없이 화면만 터치하는 기기 (핸드폰/태블릿)
+local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- 창이 화면보다 크면(핸드폰 가로 화면은 세로가 400 정도) 통째로 줄여서 닫기 버튼까지 보이게 함
+local function fitToScreen(panel: GuiObject, height: number)
+	local scale = make("UIScale", { Parent = panel })
+	local function fit()
+		local camera = Workspace.CurrentCamera
+		local viewport = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+		scale.Scale = math.clamp(math.min((viewport.Y - 30) / height, (viewport.X - 20) / 480), 0.5, 1)
+	end
+	fit()
+	if Workspace.CurrentCamera then
+		Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+	end
+end
+
 export type Callbacks = {
 	craft: (recipeId: string) -> (),
 	buyProduct: (productId: number) -> (),
@@ -164,6 +181,7 @@ function Hud.init(callbacks: Callbacks)
 	bagFrame = make("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -90), Size = UDim2.fromOffset(250, 260), BackgroundTransparency = 1, Parent = gui })
 	make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom, Padding = UDim.new(0, 3), Parent = bagFrame })
 
+	-- 키 안내 (핸드폰은 키보드가 없고 그 자리에 화면 버튼이 있으므로 숨김)
 	tr(
 		label({
 			AnchorPoint = Vector2.new(1, 1),
@@ -172,6 +190,7 @@ function Hud.init(callbacks: Callbacks)
 			TextSize = 13,
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextTransparency = 0.35,
+			Visible = not touchOnly,
 			Parent = gui,
 		}),
 		"[E] 줍기/사용   [C] 제작   [1~9] 도구 들기   [클릭] 도구 사용   [M] 지도\n[F] 손전등   [R] 건전지 교체   [Shift] 달리기   [Ctrl] 웅크리기   [Q] 목표   [P] 설정   [B] 상점(대기실)"
@@ -194,11 +213,20 @@ function Hud.init(callbacks: Callbacks)
 	end)
 
 	-- 손전등 건전지
-	batteryBack = make("Frame", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -80), Size = UDim2.fromOffset(120, 6), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.5, BorderSizePixel = 0, Parent = gui })
+	-- 핸드폰: 오른쪽 아래는 화면 버튼 자리라서 건전지 표시와 알림을 오른쪽 위 버튼 줄 아래로 옮김
+	batteryBack = make("Frame", {
+		AnchorPoint = Vector2.new(1, if touchOnly then 0 else 1),
+		Position = if touchOnly then UDim2.new(1, -16, 0, 124) else UDim2.new(1, -16, 1, -80),
+		Size = UDim2.fromOffset(120, 6),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.5,
+		BorderSizePixel = 0,
+		Parent = gui,
+	})
 	batteryBar = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(230, 220, 170), BorderSizePixel = 0, Parent = batteryBack })
-	batteryLabel = label({ AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -90), Size = UDim2.fromOffset(260, 18), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Right, TextTransparency = 0.25, Parent = gui })
+	batteryLabel = label({ AnchorPoint = Vector2.new(1, if touchOnly then 0 else 1), Position = if touchOnly then UDim2.new(1, -16, 0, 104) else UDim2.new(1, -16, 1, -90), Size = UDim2.fromOffset(260, 18), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Right, TextTransparency = 0.25, Parent = gui })
 
-	notifyList = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 90), Size = UDim2.fromOffset(420, 300), BackgroundTransparency = 1, Parent = gui })
+	notifyList = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, if touchOnly then 140 else 90), Size = UDim2.fromOffset(420, 300), BackgroundTransparency = 1, Parent = gui })
 	make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 4), Parent = notifyList })
 
 	-- 제작 창
@@ -215,7 +243,8 @@ function Hud.init(callbacks: Callbacks)
 	corner(craftPanel, 10)
 	make("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = craftPanel })
 	make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6), Parent = craftPanel })
-	tr(label({ Font = STORY_FONT, Size = UDim2.new(1, 0, 0, 28), TextSize = 24, LayoutOrder = 0, ZIndex = 6, Parent = craftPanel }), "제작대  (C로 닫기)")
+	tr(label({ Font = STORY_FONT, Size = UDim2.new(1, 0, 0, 28), TextSize = 24, LayoutOrder = 0, ZIndex = 6, Parent = craftPanel }), if touchOnly then "제작대" else "제작대  (C로 닫기)")
+	fitToScreen(craftPanel, 520)
 	for i, recipe in Recipes.list do
 		local b = button({
 			Name = recipe.id,
@@ -270,9 +299,10 @@ function Hud.init(callbacks: Callbacks)
 		ZIndex = 9,
 		Parent = notePanel,
 	})
+	fitToScreen(notePanel, 440)
 	-- 쪽지는 마우스 없이 닫아요: 키보드 [E], 게임패드 B. (1인칭이라 마우스 커서가 안 보이기 때문)
 	-- 화면을 터치하는 기기에서만 닫기 버튼이 보입니다.
-	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+	if touchOnly then
 		local noteClose = tr(button({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -14), Size = UDim2.fromOffset(140, 34), ZIndex = 9, Parent = notePanel }), "닫기")
 		noteClose.Activated:Connect(function()
 			Hud.closeNote()

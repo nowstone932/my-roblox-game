@@ -3,7 +3,7 @@
 --   대기실에서는 항상 오른쪽에 보여요. 숲에서는 [P]를 눌러야 나옵니다.
 --   [P]를 누르면 "조작 중"이 되어 마우스 커서가 나타나고, 버튼과 막대를 누를 수 있어요.
 --   다시 [P](또는 닫기 버튼)를 누르면 커서가 사라지고 게임으로 돌아갑니다.
---   화면을 터치하는 기기에서는 [P] 없이 바로 누를 수 있어요.
+--   핸드폰/태블릿에서는 오른쪽 위 "설정" 버튼으로 열고 닫아요.
 --
 -- 바꾼 설정은 서버(server/Services/Settings.luau)가 저장해서 다음에 접속해도 그대로예요.
 
@@ -80,7 +80,9 @@ local function redraw()
 		return
 	end
 	local lobby = player:GetAttribute("InLobby") == true
-	panel.Visible = lobby or opened or active
+	-- 핸드폰은 화면이 좁아서 대기실에서도 "설정" 버튼을 눌렀을 때만 보여줌
+	local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	panel.Visible = (lobby and not touchOnly) or opened or active
 	titleLabel.Text = T("설정")
 	if not UserInputService.KeyboardEnabled then
 		hintLabel.Text = ""

@@ -15,6 +15,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Lang = require(ReplicatedStorage.Shared.Lang)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Immersion = require(script.Parent.Immersion)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -168,18 +169,36 @@ local function updateTracker()
 	highlight.Enabled = monster ~= nil
 end
 
--- 변신 중 1인칭에서도 내 발톱은 보이게
-local function showClaws()
-	if player:GetAttribute("Disguised") ~= true then
+-- 변신 중에는 3인칭: 카메라를 캐릭터 뒤쪽 위로 뺌 (벽에 막히면 그만큼만)
+--   시점 방식은 1인칭 그대로라서 마우스 조작은 평소와 같아요. 카메라 위치만 뒤로 물러납니다.
+local function updateCamera()
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if player:GetAttribute("Disguised") ~= true or not (char and root and root:IsA("BasePart")) then
+		Immersion.thirdPerson = Vector3.zero
 		return
 	end
-	local char = player.Character
-	local costume = char and char:FindFirstChild("Disguise")
-	if costume then
-		for _, part in costume:GetChildren() do
-			if part.Name == "Claw" and part:IsA("BasePart") then
-				part.LocalTransparencyModifier = 0
-			end
+	local want: Vector3 = S.DisguiseCamera
+	local origin = root.Position + Vector3.new(0, 1.5 + want.Y, 0)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore: { Instance } = { char }
+	for _, name in { "Disguises", "Monster" } do
+		local inst = Workspace:FindFirstChild(name)
+		if inst then
+			table.insert(ignore, inst)
+		end
+	end
+	params.FilterDescendantsInstances = ignore
+	local hit = Workspace:Raycast(origin, -root.CFrame.LookVector * want.Z, params)
+	local back = if hit then math.max(2, (hit.Position - origin).Magnitude - 1) else want.Z
+	Immersion.thirdPerson = Vector3.new(0, want.Y, back)
+
+	-- 1인칭이라 내 몸은 원래 안 보이게 처리되는데, 3인칭이니까 다시 보이게 함
+	-- (진짜 숲지기 모델로 변신했을 때는 몸이 투명해서 그대로 안 보이고, 블록 분장일 때만 보임)
+	for _, d in char:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = 0
 		end
 	end
 end
@@ -255,7 +274,7 @@ function Abilities.start(opts: Options)
 
 	RunService.RenderStepped:Connect(function(dt)
 		updateTracker()
-		showClaws()
+		updateCamera()
 		refreshTimer -= dt
 		if refreshTimer <= 0 then
 			refreshTimer = 0.2

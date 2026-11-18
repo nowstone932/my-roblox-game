@@ -1,8 +1,8 @@
 -- 설정 창 (화면 오른쪽): 언어, 효과음 크기, 배경음 크기
 --
---   대기실에서는 항상 오른쪽에 보여요. 숲에서는 [P]를 눌러야 나옵니다.
---   [P]를 누르면 "조작 중"이 되어 마우스 커서가 나타나고, 버튼과 막대를 누를 수 있어요.
---   다시 [P](또는 닫기 버튼)를 누르면 커서가 사라지고 게임으로 돌아갑니다.
+--   평소에는 닫혀 있고, [P]를 누르면 열리면서 마우스 커서가 나타나 버튼과 막대를 누를 수 있어요.
+--   다시 [P](또는 닫기 버튼)를 누르면 창이 닫히고 커서가 사라집니다.
+--   대기실에서는 닫혀 있는 동안 오른쪽에 작은 "설정 [P]" 꼬리표가 보여요.
 --   핸드폰/태블릿에서는 오른쪽 위 "설정" 버튼으로 열고 닫아요.
 --
 -- 바꾼 설정은 서버(server/Services/Settings.luau)가 저장해서 다음에 접속해도 그대로예요.
@@ -34,6 +34,7 @@ local panel: Frame
 local titleLabel: TextLabel
 local hintLabel: TextLabel
 local closeButton: TextButton
+local launcher: TextButton
 local langButtons: { [string]: TextButton } = {}
 local rowLabels: { [string]: TextLabel } = {}
 local sliders: { [string]: { track: TextButton, fill: Frame, knob: Frame, value: TextLabel } } = {}
@@ -80,9 +81,11 @@ local function redraw()
 		return
 	end
 	local lobby = player:GetAttribute("InLobby") == true
-	-- 핸드폰은 화면이 좁아서 대기실에서도 "설정" 버튼을 눌렀을 때만 보여줌
+	-- 열었을 때만 보임. 핸드폰은 오른쪽 위 "설정" 버튼이 따로 있어서 꼬리표를 만들지 않음
 	local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-	panel.Visible = (lobby and not touchOnly) or opened or active
+	panel.Visible = opened or active
+	launcher.Visible = lobby and not touchOnly and not panel.Visible
+	launcher.Text = if UserInputService.KeyboardEnabled then "⚙  " .. T("설정") .. "  [P]" else "⚙  " .. T("설정")
 	titleLabel.Text = T("설정")
 	if not UserInputService.KeyboardEnabled then
 		hintLabel.Text = ""
@@ -212,6 +215,26 @@ function Settings.init()
 		Parent = gui,
 	})
 	corner(panel, 10)
+
+	-- 닫혀 있을 때 대기실 오른쪽에 보이는 꼬리표
+	launcher = make("TextButton", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -16, 0.5, -40),
+		Size = UDim2.fromOffset(132, 40),
+		BackgroundColor3 = Color3.fromRGB(16, 14, 12),
+		BackgroundTransparency = 0.3,
+		TextColor3 = Color3.fromRGB(240, 228, 205),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 15,
+		Visible = false,
+		Parent = gui,
+	})
+	corner(launcher, 20)
+	make("UIStroke", { Color = Color3.fromRGB(150, 90, 40), Thickness = 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = launcher })
+	launcher.Activated:Connect(function()
+		Settings.toggle()
+	end)
+
 	make("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), Parent = panel })
 	make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6), Parent = panel })
 

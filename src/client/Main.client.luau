@@ -11,6 +11,7 @@
 -- 조작: [F] 손전등  [R] 건전지 교체  [Shift] 달리기  [Ctrl] 웅크리기  [C] 제작  [Q] 목표 보기
 --       [M] 지도  [P] 설정  [E] 쪽지 닫기  [Enter] 대기실에서 지금 출발  [B] 대기실 상점
 --       게임패스가 있으면: [T] 숲지기 추적기  [G] 숲지기 변신
+--       핸드폰/태블릿은 키 대신 화면 버튼 (TouchControls)
 
 local ContextActionService = game:GetService("ContextActionService")
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -36,6 +37,7 @@ local Settings = require(script.Parent.Settings)
 local Shop = require(script.Parent.Shop)
 local Abilities = require(script.Parent.Abilities)
 local Spectate = require(script.Parent.Spectate)
+local TouchControls = require(script.Parent.TouchControls)
 local Weather = require(script.Parent.Weather)
 
 local player = Players.LocalPlayer
@@ -423,7 +425,7 @@ if player.Character then
 end
 
 ---------------------------------------------------------------------------
--- 키 입력 (세 번째 값 true = 모바일에서는 화면 버튼이 생김)
+-- 키 입력 (핸드폰 화면 버튼은 아래 TouchControls 에서 따로 만듦)
 ---------------------------------------------------------------------------
 local function bind(name: string, title: string, callback: (began: boolean) -> (), sink: boolean, ...: Enum.KeyCode)
 	ContextActionService:BindAction(name, function(_, inputState)
@@ -433,37 +435,29 @@ local function bind(name: string, title: string, callback: (began: boolean) -> (
 			callback(false)
 		end
 		return if sink then Enum.ContextActionResult.Sink else Enum.ContextActionResult.Pass
-	end, true, ...)
+	end, false, ...)
 	ContextActionService:SetTitle(name, title)
 end
 
-bind("Flashlight", "빛", function(began)
-	if began then
-		Flashlight.toggle()
-	end
-end, true, Enum.KeyCode.F, Enum.KeyCode.DPadUp)
-
-bind("Reload", "건전지", function(began)
-	if began and not Flashlight.reload() then
+local function reload()
+	if not Flashlight.reload() then
 		if (player:GetAttribute("Cell") or 0) < 1 then
 			Hud.notify("건전지가 없다")
 		end
 	end
-end, true, Enum.KeyCode.R, Enum.KeyCode.DPadRight)
+end
 
-bind("CraftMenu", "제작", function(began)
-	if began then
-		if Hud.isNoteOpen() then
-			Hud.closeNote()
-		else
-			MapUi.close()
-			Hud.setCraftOpen(not Hud.isCraftPanelOpen())
-		end
+local function toggleCraft()
+	if Hud.isNoteOpen() then
+		Hud.closeNote()
+	else
+		MapUi.close()
+		Hud.setCraftOpen(not Hud.isCraftPanelOpen())
 	end
-end, true, Enum.KeyCode.C, Enum.KeyCode.ButtonY)
+end
 
-bind("Map", "지도", function(began)
-	if not began or inLobby() then
+local function toggleMap()
+	if inLobby() then
 		return
 	end
 	if MapUi.isOpen() then
@@ -474,6 +468,30 @@ bind("Map", "지도", function(began)
 		MapUi.open()
 	else
 		Hud.notify("지도가 없다 — 벌목 캠프 한가운데 게시판에서 챙길 수 있다")
+	end
+end
+
+bind("Flashlight", "빛", function(began)
+	if began then
+		Flashlight.toggle()
+	end
+end, true, Enum.KeyCode.F, Enum.KeyCode.DPadUp)
+
+bind("Reload", "건전지", function(began)
+	if began then
+		reload()
+	end
+end, true, Enum.KeyCode.R, Enum.KeyCode.DPadRight)
+
+bind("CraftMenu", "제작", function(began)
+	if began then
+		toggleCraft()
+	end
+end, true, Enum.KeyCode.C, Enum.KeyCode.ButtonY)
+
+bind("Map", "지도", function(began)
+	if began then
+		toggleMap()
 	end
 end, true, Enum.KeyCode.M, Enum.KeyCode.DPadDown)
 
@@ -517,6 +535,129 @@ ContextActionService:BindAction("ShowObjectives", function(_, inputState)
 	end
 	return Enum.ContextActionResult.Pass
 end, false, Enum.KeyCode.Q, Enum.KeyCode.DPadLeft)
+
+---------------------------------------------------------------------------
+-- 핸드폰/태블릿: 화면 버튼 (키보드가 없는 기기에서만 나타남)
+---------------------------------------------------------------------------
+local function aliveInRound(): boolean
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	return inRound() and hum ~= nil and hum.Health > 0
+end
+
+local function standing(): boolean
+	return aliveInRound() and player:GetAttribute("Downed") ~= true
+end
+
+TouchControls.start({
+	-- 점프 버튼 둘레 (가까운 자리부터: 자주 쓰는 것)
+	{
+		id = "Sprint",
+		text = "달리기",
+		group = "action",
+		-- 터치는 누르고 있기 어려워서 한 번 누르면 켜지고, 다시 누르거나 기운이 다 떨어지면 꺼짐
+		onPress = function()
+			sprinting = not sprinting and stamina > 0.1
+		end,
+		visible = standing,
+		isOn = function()
+			return sprinting
+		end,
+	},
+	{
+		id = "Flashlight",
+		text = "손전등",
+		group = "action",
+		onPress = Flashlight.toggle,
+		visible = aliveInRound,
+		isOn = Flashlight.isOn,
+	},
+	{
+		id = "Crouch",
+		text = "웅크리기",
+		group = "action",
+		onPress = function()
+			crouching = not crouching
+		end,
+		visible = standing,
+		isOn = function()
+			return crouching
+		end,
+	},
+	{
+		id = "Reload",
+		text = "건전지",
+		group = "action",
+		onPress = reload,
+		visible = aliveInRound,
+	},
+	{
+		id = "Tracker",
+		text = "추적",
+		group = "action",
+		onPress = Abilities.requestTracker,
+		visible = function()
+			return aliveInRound() and Abilities.owns("Tracker")
+		end,
+	},
+	{
+		id = "Disguise",
+		text = "변신",
+		group = "action",
+		onPress = Abilities.requestDisguise,
+		visible = function()
+			return standing() and Abilities.owns("Disguise")
+		end,
+		isOn = function()
+			return player:GetAttribute("Disguised") == true
+		end,
+	},
+	-- 오른쪽 위 창 버튼
+	{
+		id = "Objectives",
+		text = "목표",
+		group = "menu",
+		onPress = Hud.showObjectives,
+		visible = inRound,
+	},
+	{
+		id = "Craft",
+		text = "제작",
+		group = "menu",
+		onPress = toggleCraft,
+		visible = aliveInRound,
+		isOn = Hud.isCraftPanelOpen,
+	},
+	{
+		id = "Map",
+		text = "지도",
+		group = "menu",
+		onPress = toggleMap,
+		visible = aliveInRound,
+		isOn = MapUi.isOpen,
+	},
+	{
+		id = "Shop",
+		text = "상점",
+		group = "menu",
+		onPress = function()
+			Settings.close()
+			Shop.toggle()
+		end,
+		visible = inLobby,
+		isOn = Shop.isActive,
+	},
+	{
+		id = "Settings",
+		text = "설정",
+		group = "menu",
+		onPress = function()
+			Shop.close()
+			Settings.toggle()
+		end,
+		isOn = Settings.isActive,
+	},
+})
 
 ---------------------------------------------------------------------------
 -- 서버가 보낸 효과

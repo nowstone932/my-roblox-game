@@ -84,7 +84,12 @@ local function requestDisguise()
 	useAbility:FireServer("Disguise")
 end
 
--- 게임패스를 가진 사람만 키(모바일은 화면 버튼)가 생김
+-- 핸드폰 화면 버튼(TouchControls)도 같은 함수를 씀
+Abilities.owns = owns
+Abilities.requestTracker = requestTracker
+Abilities.requestDisguise = requestDisguise
+
+-- 게임패스를 가진 사람만 키가 생김 (핸드폰 화면 버튼은 TouchControls 가 만듦)
 local function bind(name: string, title: string, passName: string, callback: () -> (), keyCode: Enum.KeyCode)
 	local function rebind()
 		ContextActionService:UnbindAction(name)
@@ -94,7 +99,7 @@ local function bind(name: string, title: string, passName: string, callback: () 
 					callback()
 				end
 				return Enum.ContextActionResult.Pass
-			end, true, keyCode)
+			end, false, keyCode)
 			ContextActionService:SetTitle(name, title)
 		end
 	end

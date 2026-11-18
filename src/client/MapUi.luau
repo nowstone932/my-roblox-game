@@ -8,6 +8,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Lang = require(ReplicatedStorage.Shared.Lang)
@@ -59,7 +60,8 @@ local function applyTexts()
 		return
 	end
 	titleLabel.Text = T("흑송 벌목장 지도")
-	legendLabel.Text = T("▲ 나   ● 동료   초록 = 탈출 장소   [M] 닫기")
+	-- 핸드폰은 오른쪽 위 "지도" 버튼으로 닫음
+	legendLabel.Text = if UserInputService.KeyboardEnabled then T("▲ 나   ● 동료   초록 = 탈출 장소   [M] 닫기") else T("▲ 나   ● 동료   초록 = 탈출 장소")
 	for _, item in placeLabels do
 		item.label.Text = T(item.name)
 	end

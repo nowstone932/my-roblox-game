@@ -3,7 +3,8 @@
 -- 설정 창에서 언어를 English 로 바꾸면 shared/Lang.luau 가 이 사전으로 글을 바꿔 보여줍니다.
 -- 한국어 원문은 코드에 쓰인 글자와 "완전히 똑같아야" 해요 (띄어쓰기, 문장부호까지).
 -- %d(숫자), %s(이름) 자리는 영어 쪽에도 같은 순서로 넣어 주세요.
--- 여기 없는 글은 영어 설정에서도 한국어로 보입니다. (숲 속 표지판 글씨는 일부러 한국어 그대로 둡니다)
+-- 여기 없는 글은 영어 설정에서도 한국어로 보입니다.
+-- 숲 속 표지판 글씨도 여기서 번역합니다 (client/WorldText.luau). 장승의 한자(天下大將軍 등)는 장식이라 그대로 둡니다.
 
 local Items = require(script.Parent.Items)
 local Recipes = require(script.Parent.Recipes)
@@ -269,6 +270,25 @@ local En: { [string]: string } = {
 	["제작대"] = "Workbench",
 	["관전 중: %s"] = "Spectating: %s",
 	["▲ 나   ● 동료   초록 = 탈출 장소"] = "▲ You   ● Teammates   Green = escape route",
+
+	-----------------------------------------------------------------------
+	-- 숲 속 표지판 / 물건에 적힌 글씨 (Build.text, ItemModels, LobbyBuilder)
+	-----------------------------------------------------------------------
+	["← 감시탑   주유소 →"] = "← Ranger tower   Gas station →",
+	["↑ 정문"] = "↑ Main gate",
+	["흑송 벌목장  ↑"] = "Blackpine Logging Camp  ↑",
+	["← 벌목지"] = "← Clear-cut",
+	["출입 금지"] = "NO ENTRY",
+	["흑송 벌목장\n안내도"] = "Blackpine Logging Camp\nMap",
+	["흑송 주유소"] = "Blackpine Gas",
+	["출 구"] = "EXIT",
+	["1998\n10월"] = "1998\nOCT",
+	["열쇠"] = "KEYS",
+	["⚡ 위험"] = "⚡ DANGER",
+	["화약 위험"] = "EXPLOSIVES",
+	["연료"] = "FUEL",
+	["트럭"] = "TRUCK",
+	["흑송"] = "BLACKPINE",
 }
 
 ---------------------------------------------------------------------------

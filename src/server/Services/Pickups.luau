@@ -161,7 +161,7 @@ local function spawnDogTags()
 			spawnItem("DogTag", spot, function(player)
 				Inventory.add(player, "DogTag", 1)
 				local stats = player:FindFirstChild("leaderstats")
-				local tags = stats and stats:FindFirstChild("인식표")
+				local tags = stats and stats:FindFirstChild(Config.Stats.Tags)
 				if tags and tags:IsA("IntValue") then
 					tags.Value += 1
 				end
@@ -291,9 +291,9 @@ end
 
 function Pickups.setupStats(player: Player)
 	local stats = player:FindFirstChild("leaderstats")
-	if stats and not stats:FindFirstChild("인식표") then
+	if stats and not stats:FindFirstChild(Config.Stats.Tags) then
 		local tags = Instance.new("IntValue")
-		tags.Name = "인식표"
+		tags.Name = Config.Stats.Tags
 		tags.Parent = stats
 	end
 end

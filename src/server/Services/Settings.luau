@@ -2,7 +2,7 @@
 --
 -- 설정은 클라이언트(client/Settings.luau)가 바꾸고, 여기서는 저장만 해요.
 -- 대기실 서버에서 바꾼 설정이 숲(전용 서버)으로 넘어가도, 다음에 다시 접속해도 그대로 남습니다.
---   플레이어 속성: OptLang("ko"/"en"), OptSfx(0~100), OptMusic(0~100), OptLoaded(불러오기 끝남)
+--   플레이어 속성: OptLang("en"/"ko"/"es"/"pt"), OptSfx(0~100), OptMusic(0~100), OptLoaded(불러오기 끝남)
 --
 -- Studio에서는 "게임 설정 > 보안 > Studio의 API 서비스 접근 허용"을 켜지 않으면 저장이 안 돼요.
 -- 그래도 게임은 정상으로 돌아가고, 설정만 그 판 동안만 유지됩니다.
@@ -11,6 +11,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Lang = require(ReplicatedStorage.Shared.Lang)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local Settings = {}
@@ -36,7 +37,7 @@ local function load(player: Player)
 			return (store :: DataStore):GetAsync(key(player))
 		end)
 		if ok and typeof(data) == "table" and player.Parent == Players then
-			if data.lang == "ko" or data.lang == "en" then
+			if Lang.isSupported(data.lang) then
 				player:SetAttribute("OptLang", data.lang)
 			end
 			local sfx, music = validPercent(data.sfx), validPercent(data.music)
@@ -99,7 +100,7 @@ function Settings.init()
 	end
 
 	Remotes.get("SaveSettings").OnServerEvent:Connect(function(player: Player, lang: any, sfx: any, music: any)
-		if lang ~= "ko" and lang ~= "en" then
+		if not Lang.isSupported(lang) then
 			return
 		end
 		local sfxValue, musicValue = validPercent(sfx), validPercent(music)

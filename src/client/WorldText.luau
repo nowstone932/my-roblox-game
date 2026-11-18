@@ -5,10 +5,15 @@
 -- 영어 문장은 src/shared/LangEn.luau 의 "숲 속 표지판" 칸에 있어요. 사전에 없는 글씨는 그대로 둡니다.
 --
 -- 대기실 천막 안내판(이름이 "Board")은 Hud 가 따로 채우므로 건드리지 않습니다.
+--
+-- 아래 도구 칸(1~9)에 보이는 도구 이름도 여기서 바꿉니다. 서버의 도구 이름은 한국어 그대로이고
+-- (서버는 이름 대신 ItemId 속성으로 도구를 찾음), 내 화면에서만 이름을 바꿔 보여줍니다.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Items = require(ReplicatedStorage.Shared.Items)
 local Lang = require(ReplicatedStorage.Shared.Lang)
 
 local WorldText = {}
@@ -23,7 +28,56 @@ local function apply(label: TextLabel, entry: Entry)
 	end
 end
 
+-- 도구 이름 (예: "조명탄 총" → "Flare gun", "섬광탄 x2" → "Flashbang x2")
+local tools: { [Tool]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+
+local function toolName(tool: Tool): string?
+	local def = Items.defs[tool:GetAttribute("ItemId") :: any]
+	if not def then
+		return nil
+	end
+	local name = Lang.t(def.name)
+	local count = tool:GetAttribute("Count")
+	if def.stack and typeof(count) == "number" then
+		name = ("%s x%d"):format(name, count)
+	end
+	return name
+end
+
+local function applyTool(tool: Tool)
+	local name = toolName(tool)
+	if name and tool.Name ~= name then
+		tool.Name = name
+	end
+	local def = Items.defs[tool:GetAttribute("ItemId") :: any]
+	if def and def.desc then
+		local tip = Lang.t(def.desc)
+		if tool.ToolTip ~= tip then
+			tool.ToolTip = tip
+		end
+	end
+end
+
+local function trackTool(tool: Tool)
+	if tools[tool] then
+		return
+	end
+	tools[tool] = true
+	applyTool(tool)
+	-- 서버가 개수를 바꾸면 이름이 한국어로 돌아오므로 다시 바꿈
+	tool:GetPropertyChangedSignal("Name"):Connect(function()
+		applyTool(tool)
+	end)
+	tool:GetAttributeChangedSignal("Count"):Connect(function()
+		applyTool(tool)
+	end)
+end
+
 local function track(label: Instance)
+	if label:IsA("Tool") then
+		trackTool(label)
+		return
+	end
 	if not label:IsA("TextLabel") or entries[label] then
 		return
 	end
@@ -48,9 +102,18 @@ function WorldText.start()
 		track(child)
 	end
 	Workspace.DescendantAdded:Connect(track)
+	-- 가방(Backpack) 안의 도구
+	local player = Players.LocalPlayer
+	for _, child in player:GetDescendants() do
+		track(child)
+	end
+	player.DescendantAdded:Connect(track)
 	Lang.onChanged(function()
 		for label, entry in entries do
 			apply(label, entry)
+		end
+		for tool in tools do
+			applyTool(tool)
 		end
 	end)
 end

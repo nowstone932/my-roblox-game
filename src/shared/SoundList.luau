@@ -15,7 +15,9 @@
 --   range   : 3D 소리일 때 들리는 최대 거리(스터드). 이 값이 있으면 "그 위치에서" 소리가 남
 --   music   : true면 "음악" 그룹 (설정에서 음악 볼륨만 따로 줄일 수 있게)
 --
--- 지금 들어 있는 번호는 Creator Store(로블록스 공식 무료 음원 위주)에서 골라 넣은 "후보"예요.
+-- 지금 들어 있는 번호는 모두 Creator Store의 공식 음원(APMOfficial, ProSoundEffects)이에요.
+-- 이런 공식 음원은 어느 게임에서나 권한 없이 재생돼요.
+-- 개인이 올린 소리는 "권한 오류"로 막히니, 바꿀 때도 만든 사람이 APMOfficial / ProSoundEffects / Roblox 인 걸 고르세요.
 -- 클라우드에서는 직접 들어볼 수 없어서, 실제로 어울리는지/재생되는지는 Studio에서 확인해야 해요.
 -- 맘에 안 들면 그 줄 번호만 바꾸거나 0으로 두면 됩니다.
 --
@@ -43,11 +45,11 @@ SoundList.Sounds = {
 	-------------------------------------------------------------------------
 	-- 배경음악 / 배경음 (반복)
 	-------------------------------------------------------------------------
-	LobbyMusic = { id = 181730439, volume = 0.35, looped = true, music = true }, -- 대기 시간 음악 (잔잔하고 불길한 피아노 등)
+	LobbyMusic = { id = 1839911004, volume = 0.35, looped = true, music = true }, -- 대기 시간 음악: "Nursery Crime 60" (APM 공식, 으스스한 동요풍)
 	ForestAmbience = { id = 9112781510, volume = 0.5, looped = true, music = true }, -- 숲 배경음: 바람, 귀뚜라미, 부엉이
 	TensionMusic = { id = 9040210932, volume = 0.6, looped = true, music = true }, -- 긴장 음악: 괴물이 가까울수록 커짐 (낮은 드론음)
 	ChaseMusic = { id = 9042675817, volume = 0.7, looped = true, music = true }, -- 추격 음악: 괴물이 쫓아올 때 (빠른 북소리/현악)
-	Heartbeat = { id = 176554627, volume = 1, looped = true }, -- 심장 소리: 괴물이 가깝거나 체력이 낮을 때
+	Heartbeat = { id = 9043365727, volume = 1, looped = true }, -- 심장 소리: 괴물이 가깝거나 체력이 낮을 때 ("HEARTBEAT 01 96BPM", APM 공식)
 
 	-------------------------------------------------------------------------
 	-- 괴물 (3D: 괴물 위치에서 들림 → 소리로 방향을 알 수 있음)
@@ -114,7 +116,7 @@ SoundList.Sounds = {
 	-- 라운드 / 엔딩
 	-------------------------------------------------------------------------
 	RoundStart = { id = 9114224217, volume = 0.8, music = true }, -- 라운드 시작 (낮은 종소리 등)
-	Victory = { id = 1507116849, volume = 0.9, music = true }, -- 탈출 성공 짧은 음악
+	Victory = { id = 140170759012231, volume = 0.9, music = true }, -- 탈출 성공 짧은 음악: "Tears Into Triumph Sting" (APM 공식)
 	Defeat = { id = 9114571719, volume = 0.9, music = true }, -- 사망/시간 초과 짧은 음악
 }
 

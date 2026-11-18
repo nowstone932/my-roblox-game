@@ -32,15 +32,66 @@ local function decor(handle: BasePart, size: Vector3, offset: CFrame, color: Col
 	return p
 end
 
+local CYL = Enum.PartType.Cylinder
+
+-- 부품 한 면에 글씨를 붙임 (예: 총 옆면의 "FLARE")
+local function sticker(part: BasePart, face: Enum.NormalId, value: string, color: Color3)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = face
+	gui.LightInfluence = 1
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = value
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBlack
+	label.TextColor3 = color
+	label.Parent = gui
+	gui.Parent = part
+end
+
 -- 도구 모양 만들기. 손잡이(Handle) 기준으로 -Z가 앞쪽입니다.
 local builders: { [string]: (Tool, BasePart) -> () } = {
 	FlareGun = function(tool, h)
-		h.Size = Vector3.new(0.35, 1, 0.5)
-		h.Color = Color3.fromRGB(40, 40, 40)
-		decor(h, Vector3.new(0.5, 0.6, 1.2), CFrame.new(0, 0.6, -0.2), Color3.fromRGB(200, 70, 20), Enum.Material.Plastic)
-		decor(h, Vector3.new(1.6, 0.45, 0.45), CFrame.new(0, 0.65, -1.3) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(230, 90, 25), Enum.Material.Plastic, Enum.PartType.Cylinder)
-		decor(h, Vector3.new(0.1, 0.35, 0.3), CFrame.new(0, 0.1, -0.35), Color3.fromRGB(30, 30, 30))
-		tool.Grip = CFrame.new(0, -0.2, 0)
+		-- 주황색 신호탄 권총. 손잡이(Handle)는 총의 몸통이고, 나머지 부품을 붙여 만듭니다.
+		h.Size = Vector3.new(0.42, 0.5, 0.8)
+		h.Color = Color3.fromRGB(236, 96, 22)
+		h.Material = Enum.Material.Plastic
+		decor(h, Vector3.new(1.35, 0.5, 0.5), CFrame.new(0, 0.08, -0.98) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(236, 96, 22), Enum.Material.Plastic, CYL) -- 총열
+		decor(h, Vector3.new(0.18, 0.56, 0.56), CFrame.new(0, 0.08, -0.36) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(190, 68, 14), Enum.Material.Plastic, CYL) -- 총열 뒤쪽 테두리
+		decor(h, Vector3.new(0.07, 0.54, 0.54), CFrame.new(0, 0.08, -0.95) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(190, 68, 14), Enum.Material.Plastic, CYL) -- 총열 가운데 띠
+		decor(h, Vector3.new(0.14, 0.58, 0.58), CFrame.new(0, 0.08, -1.6) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(45, 45, 50), Enum.Material.Metal, CYL) -- 총구 쇠고리
+		decor(h, Vector3.new(0.02, 0.38, 0.38), CFrame.new(0, 0.08, -1.672) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(8, 8, 8), Enum.Material.SmoothPlastic, CYL) -- 총구 구멍
+		decor(h, Vector3.new(0.02, 0.24, 0.24), CFrame.new(0, 0.08, -1.676) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(170, 25, 20), Enum.Material.SmoothPlastic, CYL) -- 장전된 조명탄
+		decor(h, Vector3.new(0.1, 0.05, 1.15), CFrame.new(0, 0.35, -0.98), Color3.fromRGB(26, 26, 28), Enum.Material.SmoothPlastic) -- 위쪽 가늠자 띠
+		decor(h, Vector3.new(0.06, 0.1, 0.08), CFrame.new(0, 0.42, -1.52), Color3.fromRGB(26, 26, 28), Enum.Material.SmoothPlastic) -- 앞 가늠쇠
+		decor(h, Vector3.new(0.05, 0.12, 0.08), CFrame.new(-0.07, 0.31, 0.3), Color3.fromRGB(26, 26, 28), Enum.Material.SmoothPlastic) -- 뒤 가늠자 (왼)
+		decor(h, Vector3.new(0.05, 0.12, 0.08), CFrame.new(0.07, 0.31, 0.3), Color3.fromRGB(26, 26, 28), Enum.Material.SmoothPlastic) -- 뒤 가늠자 (오른)
+		decor(h, Vector3.new(0.34, 0.16, 0.75), CFrame.new(0, -0.18, -0.72), Color3.fromRGB(236, 96, 22), Enum.Material.Plastic) -- 총열 아래 몸통
+		decor(h, Vector3.new(0.46, 0.14, 0.14), CFrame.new(0, -0.15, -0.42), Color3.fromRGB(72, 72, 78), Enum.Material.Metal, CYL) -- 꺾이는 축 (경첩)
+		decor(h, Vector3.new(0.05, 0.14, 0.3), CFrame.new(0.225, 0.12, -0.2), Color3.fromRGB(72, 72, 78), Enum.Material.Metal) -- 장전 레버
+		decor(h, Vector3.new(0.44, 0.07, 0.07), CFrame.new(0, -0.15, 0.28), Color3.fromRGB(72, 72, 78), Enum.Material.Metal, CYL) -- 몸통 나사
+		decor(h, Vector3.new(0.12, 0.26, 0.1), CFrame.new(0, 0.34, 0.41) * CFrame.Angles(math.rad(25), 0, 0), Color3.fromRGB(72, 72, 78), Enum.Material.Metal) -- 공이치기
+		decor(h, Vector3.new(0.16, 0.05, 0.14), CFrame.new(0, 0.45, 0.47) * CFrame.Angles(math.rad(25), 0, 0), Color3.fromRGB(72, 72, 78), Enum.Material.Metal) -- 공이치기 손잡이
+		decor(h, Vector3.new(0.38, 1, 0.5), CFrame.new(0, -0.68, 0.22) * CFrame.Angles(math.rad(-15), 0, 0), Color3.fromRGB(236, 96, 22), Enum.Material.Plastic) -- 손잡이
+		decor(h, Vector3.new(0.04, 0.72, 0.4), CFrame.new(-0.2, -0.72, 0.23) * CFrame.Angles(math.rad(-15), 0, 0), Color3.fromRGB(38, 36, 34), Enum.Material.Fabric) -- 고무 손잡이 (왼)
+		decor(h, Vector3.new(0.04, 0.72, 0.4), CFrame.new(0.2, -0.72, 0.23) * CFrame.Angles(math.rad(-15), 0, 0), Color3.fromRGB(38, 36, 34), Enum.Material.Fabric) -- 고무 손잡이 (오른)
+		decor(h, Vector3.new(0.48, 0.08, 0.08), CFrame.new(0, -0.72, 0.23), Color3.fromRGB(72, 72, 78), Enum.Material.Metal, CYL) -- 손잡이 나사
+		decor(h, Vector3.new(0.42, 0.1, 0.56), CFrame.new(0, -1.16, 0.35) * CFrame.Angles(math.rad(-15), 0, 0), Color3.fromRGB(26, 26, 28), Enum.Material.SmoothPlastic) -- 손잡이 바닥
+		decor(h, Vector3.new(0.04, 0.18, 0.18), CFrame.new(0, -1.27, 0.5), Color3.fromRGB(72, 72, 78), Enum.Material.Metal, CYL) -- 끈 고리
+		decor(h, Vector3.new(0.05, 0.09, 0.09), CFrame.new(0, -1.27, 0.5), Color3.fromRGB(26, 26, 28), Enum.Material.SmoothPlastic, CYL) -- 끈 고리 구멍
+		decor(h, Vector3.new(0.1, 0.06, 0.44), CFrame.new(0, -0.55, -0.26), Color3.fromRGB(236, 96, 22), Enum.Material.Plastic) -- 방아쇠울 아래
+		decor(h, Vector3.new(0.1, 0.32, 0.06), CFrame.new(0, -0.4, -0.45), Color3.fromRGB(236, 96, 22), Enum.Material.Plastic) -- 방아쇠울 앞
+		decor(h, Vector3.new(0.07, 0.24, 0.08), CFrame.new(0, -0.37, -0.19) * CFrame.Angles(math.rad(15), 0, 0), Color3.fromRGB(26, 26, 28), Enum.Material.Metal) -- 방아쇠
+		-- 몸통 양옆의 "FLARE" 글씨 판
+		sticker(decor(h, Vector3.new(0.02, 0.2, 0.48), CFrame.new(0.215, -0.08, -0.04), Color3.fromRGB(230, 225, 210)), Enum.NormalId.Right, "FLARE", Color3.fromRGB(190, 30, 20))
+		sticker(decor(h, Vector3.new(0.02, 0.2, 0.48), CFrame.new(-0.215, -0.08, -0.04), Color3.fromRGB(230, 225, 210)), Enum.NormalId.Left, "FLARE", Color3.fromRGB(190, 30, 20))
+		-- 총구 위치 (나중에 불꽃 효과를 붙일 때 사용)
+		local muzzle = Instance.new("Attachment")
+		muzzle.Name = "Muzzle"
+		muzzle.Position = Vector3.new(0, 0.08, -1.7)
+		muzzle.Parent = h
+		tool.Grip = CFrame.new(0, -0.62, 0.2) -- 손이 비스듬한 손잡이를 잡도록
 	end,
 	Axe = function(tool, h)
 		h.Size = Vector3.new(0.3, 3.2, 0.3)
